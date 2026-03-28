@@ -11,24 +11,23 @@ self.addEventListener('fetch', (e) => {
 });
 
 self.addEventListener('push', function(event) {
-  if (event.data) {
-    const data = event.data.json();
-    const options = {
-      body: data.body,
-      icon: data.icon || '/icon-192x192.png',
-      vibrate: [100, 50, 100],
-      data: {
-        dateOfArrival: Date.now(),
-        primaryKey: '2'
-      }
-    };
-    if (data.image) {
-      options.image = data.image;
+    let payload = { title: "通知", body: "新着メッセージがあります" };
+    try {
+      payload = event.data.json();
+    } catch (e) {
+      payload.body = event.data.text() || payload.body;
     }
+
+    const options = {
+      body: payload.body,
+      icon: '/icon-192x192.png',
+      vibrate: [100, 50, 100],
+      data: { dateOfArrival: Date.now() }
+    };
+
     event.waitUntil(
-      self.registration.showNotification(data.title, options)
+      self.registration.showNotification(payload.title, options)
     );
-  }
 });
 
 self.addEventListener('notificationclick', function(event) {
