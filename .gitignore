@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.vercel/
+.local_node/
+.npm-cache/
+.vercel_data/
+.vercel_cfg/
+*.log
+.env.local
+.DS_Store
