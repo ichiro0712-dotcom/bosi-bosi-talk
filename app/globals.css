@@ -5,8 +5,8 @@
   --glass-border: rgba(255, 255, 255, 0.9);
   --glass-blur: blur(24px);
   
-  --primary: #a855f7; /* 少し濃くした綺麗な紫（Tailwind purple-500程度） */
-  --primary-hover: #9333ea;
+  --primary: #e9d5ff; /* 元の淡いラベンダー色 */
+  --primary-hover: #d6bcfa;
   
   --text-main: #334155;
   --text-muted: #64748b;

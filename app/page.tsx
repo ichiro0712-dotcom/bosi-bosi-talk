@@ -54,6 +54,31 @@ export default function ChatApp() {
     }
   }, []);
 
+  // 許可済みの場合はサイレントで購読情報をDBに同期する（テスト端末のデータ欠落防止）
+  useEffect(() => {
+    if (pushStatus === 'granted' && myProfile && 'serviceWorker' in navigator && 'PushManager' in window && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+      navigator.serviceWorker.register('/sw.js').then(async (reg) => {
+        try {
+          const subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlB64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string)
+          });
+          const subJSON = subscription.toJSON();
+          if (subJSON.endpoint && subJSON.keys) {
+            await supabase.from('subscriptions').upsert({
+              endpoint: subJSON.endpoint,
+              p256dh: subJSON.keys.p256dh,
+              auth: subJSON.keys.auth,
+              user_id: myProfile
+            }, { onConflict: 'endpoint' });
+          }
+        } catch (e) {
+          console.warn('Silent push subscription failed', e);
+        }
+      });
+    }
+  }, [pushStatus, myProfile]);
+
   useEffect(() => {
     const saved = localStorage.getItem('bosi_profile');
     if (saved) setMyProfile(saved);
@@ -308,7 +333,7 @@ export default function ChatApp() {
                       borderTopLeftRadius: (!msg.isMine && isGrouped) ? '4px' : '18px',
                       borderBottomRightRadius: (msg.isMine && !isNextGrouped) ? '4px' : '18px',
                       borderBottomLeftRadius: (!msg.isMine && !isNextGrouped) ? '4px' : '18px',
-                      color: msg.isMine ? '#ffffff' : 'var(--text-main)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content'
+                      color: 'var(--text-main)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content'
                     }}>
                       {msg.text && renderTextWithLinks(msg.text)}
                       {msg.imageUrl && <img src={msg.imageUrl} alt="attached" onClick={() => setPreviewImage(msg.imageUrl!)} style={{ width: '200px', height: '200px', objectFit: 'cover', marginTop: msg.text ? '8px' : '0', borderRadius: '12px', cursor: 'pointer' }} />}
@@ -390,7 +415,7 @@ export default function ChatApp() {
               rows={1}
               style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '1rem', padding: '8px 0', resize: 'none', maxHeight: '120px' }}
             />
-            <button onClick={() => handleSend()} style={{ background: inputText ? 'var(--primary-hover)' : '#e2e8f0', color: inputText ? 'white' : 'var(--text-muted)', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: inputText ? 'pointer' : 'default', transition: 'all 0.2s' }}>
+            <button onClick={() => handleSend()} style={{ background: inputText ? 'var(--primary)' : '#e2e8f0', color: inputText ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: inputText ? 'pointer' : 'default', transition: 'all 0.2s' }}>
               <Send size={18} style={{ transform: 'translate(1px, 1px)' }} />
             </button>
           </div>
