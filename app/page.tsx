@@ -89,7 +89,7 @@ export default function ChatApp() {
             const newMsg = payload.new as any;
             setMessages(prev => {
               if (prev.find(p => p.id === newMsg.id)) return prev;
-              const withoutTemp = prev.filter(m => !(m.id.toString().startsWith('temp_') && m.text === newMsg.text && m.imageUrl === newMsg.image_url && m.isMine === (newMsg.user_id === myProfile)));
+              const withoutTemp = prev.filter(m => !(m.id.toString().startsWith('temp_') && m.text === newMsg.text && (m.imageUrl || null) === (newMsg.image_url || null) && m.isMine === (newMsg.user_id === myProfile)));
               return [...withoutTemp, {
                 id: newMsg.id, text: newMsg.text, isMine: newMsg.user_id === myProfile,
                 time: new Date(newMsg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
@@ -154,6 +154,7 @@ export default function ChatApp() {
     if (!txt && !imgUrl) return;
     
     setInputText("");
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     
     // オプティミスティックUI（送信中ステータス付与）
     const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(7);
@@ -360,9 +361,7 @@ export default function ChatApp() {
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
               }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); if (textareaRef.current) textareaRef.current.style.height = 'auto'; }
-              }}
+              onKeyDown={() => { /* default behavior: enter adds newline */ }}
               placeholder="メッセージを入力してください..."
               rows={1}
               style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '1rem', padding: '8px 0', resize: 'none', maxHeight: '120px' }}
