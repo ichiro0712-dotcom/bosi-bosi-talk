@@ -41,6 +41,7 @@ export default function ChatApp() {
   const [isProfileChecking, setIsProfileChecking] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string>('granted'); // hidden by default unless proven otherwise
+  const [debugLog, setDebugLog] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -172,7 +173,7 @@ export default function ChatApp() {
           }, { onConflict: 'endpoint' });
         }
         alert("通知設定を更新しました。数秒後にテスト通知が届きます。");
-        setTimeout(() => triggerPushNotification("テスト通知", "通知が正常に設定されました！"), 1000);
+        setTimeout(() => triggerPushNotification("テスト送信です", undefined, true), 1000);
       } catch (err) {
         console.error('Push 購読エラー', err);
         alert("通知の設定中にエラーが発生しました。\n※iPhoneの場合は「ホーム画面に追加」から開く必要があります。");
@@ -180,14 +181,20 @@ export default function ChatApp() {
     }
   };
 
-  const triggerPushNotification = async (text: string, imageUrl?: string) => {
+  const triggerPushNotification = async (text: string, imageUrl?: string, isTest?: boolean) => {
     try {
-      await fetch('/api/notify', {
+      setDebugLog("送信中...");
+      const res = await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: "チームチャット（新規）", body: text || "スタンプが送信されました！", imageUrl })
+        body: JSON.stringify({ title: isTest ? "テスト通知" : "チームチャット（新規）", body: text || "スタンプが送信されました！", imageUrl })
       });
-    } catch(e) { console.error(e); }
+      const data = await res.json();
+      if (isTest) setDebugLog("結果: " + JSON.stringify(data));
+    } catch(e: any) { 
+      if (isTest) setDebugLog("例外発生: " + e.message);
+      console.error(e); 
+    }
   };
 
   const handleSend = async (textOveride?: string, imgUrl?: string) => {
@@ -296,6 +303,12 @@ export default function ChatApp() {
           </div>
         )}
         
+        {debugLog && (
+          <div style={{ padding: '8px 24px', background: '#333', borderBottom: '1px solid var(--glass-border)', wordBreak: 'break-all' }}>
+            <span style={{fontSize: '0.75rem', color:'#0f0', fontFamily: 'monospace'}}>{debugLog}</span>
+          </div>
+        )}
+
         {pushStatus === 'denied' && (
           <div style={{ padding: '8px 24px', background: 'rgba(244, 63, 94, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
             <span style={{fontSize: '0.8rem', color:'#f43f5e', fontWeight: 600}}>【通知がブロックされています】</span>
