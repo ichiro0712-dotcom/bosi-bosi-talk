@@ -173,7 +173,7 @@ export default function ChatApp() {
       try {
         const res = await fetch(base64Image);
         const blob = await res.blob();
-        const filePath = `stamps/${Date.now()}.png`;
+        const filePath = `stamps/${Date.now()}.svg`;
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob, { contentType: 'image/png' });
         
         if (!error) {
@@ -190,7 +190,7 @@ export default function ChatApp() {
   const sendStampTemplate = (name: string) => {
     setShowStampPicker(false);
     // 自身でDL・配置することを前提に、ローカルURLを参照
-    const localUrl = `/stamps/stamp_${name}.png`;
+    const localUrl = `/stamps/stamp_${name}.svg`;
     
     const tempId = Date.now();
     setMessages(prev => [...prev, { id: tempId, text: '', isMine: true, imageUrl: localUrl, time: 'Now' }]);
@@ -290,7 +290,7 @@ export default function ChatApp() {
               <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:'10px', overflowY:'auto', maxHeight:'240px'}}>
                 {['ok','thanks','cheers','wow','sorry','yes','thinking','nod','roger','love'].map(name => (
                   <div key={name} onClick={() => sendStampTemplate(name)} style={{aspectRatio:'1/1', background:'#f8fafc', borderRadius:'12px', overflow:'hidden', cursor:'pointer', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center'}}>
-                    <img src={`/stamps/stamp_${name}.png`} alt={name} style={{width:'90%', height:'90%', objectFit:'contain'}} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.parentElement!.innerHTML = '<span style="font-size:0.7rem;color:#94a3b8">DL待機</span>'; }} />
+                    <img src={`/stamps/stamp_${name}.svg`} alt={name} style={{width:'90%', height:'90%', objectFit:'contain'}} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.parentElement!.innerHTML = '<span style="font-size:0.7rem;color:#94a3b8">DL待機</span>'; }} />
                   </div>
                 ))}
               </div>
