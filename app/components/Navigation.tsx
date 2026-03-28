@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreHorizontal, Download } from 'lucide-react';
+import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download } from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -41,13 +41,13 @@ export default function Navigation() {
     { name: 'チャット', href: '/', icon: MessageCircle },
     { name: '写真', href: 'https://photos.app.goo.gl/U7nscr2zKsxzYZrd6', icon: ImageIcon, external: true },
     { name: 'メモ（共有）', href: '/memos', icon: FileText },
-    { name: 'メニュー', isMenuBtn: true, icon: MoreHorizontal }
+    { name: '', isMenuBtn: true, icon: MoreVertical }
   ];
 
   return (
     <>
       {/* PC: Sidebar Navigation */}
-      <nav className="pc-sidebar glass-panel">
+      <nav className="pc-sidebar glass-panel" style={{ overflow: 'visible' }}>
         <div style={{ padding: '24px', borderBottom: '1px solid var(--glass-border)' }}>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, background: 'var(--primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>BOSI×BOSI Talk</h1>
         </div>
@@ -57,7 +57,7 @@ export default function Navigation() {
             const linkContent = (
               <div className={`nav-item ${isActive ? 'active' : ''}`}>
                 <item.icon size={20} />
-                <span style={{ fontWeight: 600 }}>{item.name}</span>
+                {item.name ? <span style={{ fontWeight: 600 }}>{item.name}</span> : null}
               </div>
             );
 
@@ -101,13 +101,13 @@ export default function Navigation() {
       </nav>
 
       {/* Mobile: Bottom Navigation */}
-      <nav className="mobile-bottom-nav glass-panel">
+      <nav className="mobile-bottom-nav glass-panel" style={{ overflow: 'visible' }}>
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const linkContent = (
             <div className={`bottom-nav-item ${isActive ? 'active' : ''}`}>
               <item.icon size={24} />
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, marginTop: '4px' }}>{item.name}</span>
+              {item.name ? <span style={{ fontSize: '0.75rem', fontWeight: 600, marginTop: '4px' }}>{item.name}</span> : null}
             </div>
           );
 
