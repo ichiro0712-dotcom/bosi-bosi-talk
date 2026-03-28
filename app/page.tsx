@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Plus, Image as ImageIcon, Smile, FilePlus, X } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, Smile, FilePlus, X, BellRing } from 'lucide-react';
 import { supabase } from '../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
@@ -40,12 +40,19 @@ export default function ChatApp() {
   const [myProfile, setMyProfile] = useState<string | null>(null);
   const [isProfileChecking, setIsProfileChecking] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [pushStatus, setPushStatus] = useState<string>('granted'); // hidden by default unless proven otherwise
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, previewImage]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushStatus(Notification.permission);
+    }
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem('bosi_profile');
@@ -113,31 +120,39 @@ export default function ChatApp() {
     }
   }, [myProfile]);
 
-  // Web Pushの購読登録 (Sw.js)
-  useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-      navigator.serviceWorker.register('/sw.js').then(async (reg) => {
-        try {
-          const subscription = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlB64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string)
-          });
-          
-          const subJSON = subscription.toJSON();
-          if (subJSON.endpoint && subJSON.keys) {
-            await supabase.from('subscriptions').upsert({
-              endpoint: subJSON.endpoint,
-              p256dh: subJSON.keys.p256dh,
-              auth: subJSON.keys.auth,
-              user_id: myProfile || 'unknown'
-            }, { onConflict: 'endpoint' });
-          }
-        } catch (err) {
-          console.warn('Push 購読がスキップされました', err);
-        }
-      });
+  // Web Pushの購読登録 (手動許可ボタン用)
+  const requestPushPermission = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert("お使いのブラウザはプッシュ通知に対応していません");
+      return;
     }
-  }, []);
+    const perm = await Notification.requestPermission();
+    setPushStatus(perm);
+    
+    if (perm === 'granted' && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        const subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string)
+        });
+        
+        const subJSON = subscription.toJSON();
+        if (subJSON.endpoint && subJSON.keys) {
+          await supabase.from('subscriptions').upsert({
+            endpoint: subJSON.endpoint,
+            p256dh: subJSON.keys.p256dh,
+            auth: subJSON.keys.auth,
+            user_id: myProfile || 'unknown'
+          }, { onConflict: 'endpoint' });
+        }
+        alert("通知をオンにしました！");
+      } catch (err) {
+        console.error('Push 購読エラー', err);
+        alert("通知の設定中にエラーが発生しました。\n※iPhoneの場合は「ホーム画面に追加」から開く必要があります。");
+      }
+    }
+  };
 
   const triggerPushNotification = async (text: string, imageUrl?: string) => {
     try {
@@ -252,6 +267,15 @@ export default function ChatApp() {
         {!isDBReady && (
           <div style={{ padding: '8px 24px', background: 'rgba(244, 63, 94, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'center' }}>
             <span style={{fontSize: '0.8rem', color:'#f43f5e', fontWeight: 600}}>※DB未接続（Vercelへのキー反映待ち）</span>
+          </div>
+        )}
+        {pushStatus === 'default' && (
+          <div style={{ padding: '12px 24px', background: 'rgba(168, 85, 247, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px', color:'var(--primary)'}}>
+              <BellRing size={16} />
+              <span style={{fontSize: '0.8rem', fontWeight: 600}}>新着メッセージの通知を受け取りますか？</span>
+            </div>
+            <button onClick={requestPushPermission} style={{ background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>許可する</button>
           </div>
         )}
         

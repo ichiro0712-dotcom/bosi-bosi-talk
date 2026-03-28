@@ -1,14 +1,14 @@
 :root {
   /* Liquid Glass UI Variables (Ultra Pale Lavender Theme) */
-  --bg-gradient: linear-gradient(135deg, #fdfbfe 0%, #f3eeff 100%);
-  --glass-bg: rgba(255, 255, 255, 0.75);
+  --bg-gradient: linear-gradient(135deg, #ffffff 0%, #faebff 100%); /* より薄い、綺麗なパステルパープル */
+  --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(255, 255, 255, 0.9);
   --glass-blur: blur(24px);
   
-  --primary: #e9d5ff; /* 極淡ラベンダー */
-  --primary-hover: #d6bcfa;
+  --primary: #a855f7; /* 少し濃くした綺麗な紫（Tailwind purple-500程度） */
+  --primary-hover: #9333ea;
   
-  --text-main: #334155; /* 濃いグレー（スレート） */
+  --text-main: #334155;
   --text-muted: #64748b;
   
   --shadow-soft: 0 10px 40px -10px rgba(100, 116, 166, 0.1);
