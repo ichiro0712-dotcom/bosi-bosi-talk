@@ -267,12 +267,12 @@ export default function ChatApp() {
               
               <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'8px', cursor:'pointer'}} onClick={() => {setShowAttachMenu(false); setShowStampPicker(true);}}>
                 <div style={{background:'#fce7f3', borderRadius:'50%', width:50, height:50, display:'flex', alignItems:'center', justifyContent:'center', color:'#db2777'}}><Smile size={24} /></div>
-                <span style={{fontSize:'0.75rem', fontWeight:600, color:'var(--text-muted)'}}>AIスタンプ</span>
+                <span style={{fontSize:'0.75rem', fontWeight:600, color:'var(--text-muted)'}}>スタンプ</span>
               </div>
               
               <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'8px', cursor:'pointer'}} onClick={() => {setShowAttachMenu(false); setIsStampModalOpen(true);}}>
                 <div style={{background:'#dbeafe', borderRadius:'50%', width:50, height:50, display:'flex', alignItems:'center', justifyContent:'center', color:'#2563eb'}}><FilePlus size={24} /></div>
-                <span style={{fontSize:'0.75rem', fontWeight:600, color:'var(--text-muted)'}}>描いて作る</span>
+                <span style={{fontSize:'0.75rem', fontWeight:600, color:'var(--text-muted)'}}>スタンプ作成</span>
               </div>
             </div>
           )}
