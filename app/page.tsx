@@ -173,7 +173,7 @@ export default function ChatApp() {
       try {
         const res = await fetch(base64Image);
         const blob = await res.blob();
-        const filePath = `stamps/${Date.now()}.svg`;
+        const filePath = `stamps/${Date.now()}.png`;
         const { error } = await supabase.storage.from('chat_media').upload(filePath, blob, { contentType: 'image/png' });
         
         if (!error) {
