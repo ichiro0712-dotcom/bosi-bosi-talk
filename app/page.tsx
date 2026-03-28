@@ -234,14 +234,20 @@ export default function ChatApp() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {messages.map((msg) => (
             <div key={msg.id} style={{ alignSelf: msg.isMine ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-              <div style={{
-                background: msg.isMine ? 'var(--primary)' : 'rgba(255, 255, 255, 0.95)', padding: '12px 16px', borderRadius: '18px',
-                borderBottomRightRadius: msg.isMine ? '4px' : '18px', borderBottomLeftRadius: msg.isMine ? '18px' : '4px',
-                color: msg.isMine ? '#ffffff' : 'var(--text-main)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content'
-              }}>
-                {msg.text && <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4', fontWeight: 500, letterSpacing: '0.02em' }}>{msg.text}</div>}
-                {msg.imageUrl && <img src={msg.imageUrl} alt="stamp" style={{ width: '180px', height: '180px', objectFit: 'contain', marginTop: msg.text ? '8px' : '0' }} />}
-              </div>
+              {(!msg.text && msg.imageUrl) ? (
+                <div>
+                  <img src={msg.imageUrl} alt="stamp" style={{ width: '160px', height: '160px', objectFit: 'contain', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' }} />
+                </div>
+              ) : (
+                <div style={{
+                  background: msg.isMine ? 'var(--primary)' : 'rgba(255, 255, 255, 0.95)', padding: '12px 16px', borderRadius: '18px',
+                  borderBottomRightRadius: msg.isMine ? '4px' : '18px', borderBottomLeftRadius: msg.isMine ? '18px' : '4px',
+                  color: msg.isMine ? '#ffffff' : 'var(--text-main)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content'
+                }}>
+                  {msg.text && <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4', fontWeight: 500, letterSpacing: '0.02em' }}>{msg.text}</div>}
+                  {msg.imageUrl && <img src={msg.imageUrl} alt="stamp" style={{ width: '150px', height: '150px', objectFit: 'contain', marginTop: '8px', borderRadius: '8px' }} />}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '6px', padding: msg.isMine ? '0 4px 0 0' : '0 0 0 4px' }}>
                 {msg.isMine && msg.is_read && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>既読</span>}
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{msg.time}</span>
