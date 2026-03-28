@@ -14,6 +14,16 @@ export default function MemoPage() {
   const contentRef = useRef('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const triggerPushNotification = async (title: string, text: string) => {
+    try {
+      await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, body: text })
+      });
+    } catch(e) { console.error(e); }
+  };
+
   useEffect(() => {
     // 初回ロード
     const fetchMemos = async () => {
@@ -65,6 +75,7 @@ export default function MemoPage() {
       setActiveMemo(data as Memo);
       titleRef.current = data.title;
       contentRef.current = data.content;
+      triggerPushNotification("新しいメモ追加", "チーム全員に共有される新しいメモが追加されました！");
     }
   };
 
