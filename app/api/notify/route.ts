@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       image: imageUrl, // PWAに画像プレビューを表示
     });
 
-    const sendPromises = subs.map(async (sub) => {
+    const sendResults = await Promise.all(subs.map(async (sub) => {
       const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {
@@ -42,19 +42,20 @@ export async function POST(req: Request) {
       
       try {
         await webPush.sendNotification(pushSubscription, payload);
+        return { success: true, endpoint: sub.endpoint };
       } catch (err: any) {
         if (err.statusCode === 410 || err.statusCode === 404) {
-          // エンドポイントが無効になった購読（アンインストール等）をDBから削除
           await supabase.from('subscriptions').delete().eq('id', sub.id);
+          return { success: false, reason: 'unsubscribed', endpoint: sub.endpoint };
         } else {
           console.error("Push Error on endpoint:", sub.endpoint, err);
+          return { success: false, reason: err.message, body: err.body, endpoint: sub.endpoint };
         }
       }
-    });
+    }));
 
-    await Promise.all(sendPromises);
-
-    return NextResponse.json({ success: true, sentCount: subs.length });
+    const errors = sendResults.filter(r => !r.success);
+    return NextResponse.json({ success: true, sentCount: subs.length, results: sendResults, errors });
 
   } catch (error: any) {
     console.error("Error sending push notification:", error);
