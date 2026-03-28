@@ -31,6 +31,10 @@ export default function ChatApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  useEffect(() => {
     const saved = localStorage.getItem('bosi_profile');
     if (saved) setMyProfile(saved);
     setIsProfileChecking(false);
@@ -133,9 +137,7 @@ export default function ChatApp() {
     
     setInputText("");
     
-    // 即座に画面へ反映させる（楽観的UI）
-    const tempId = Date.now();
-    setMessages(prev => [...prev, { id: tempId, text: txt, isMine: true, imageUrl: imgUrl, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) }]);
+    // Supabaseからリアルタイムでデータが届くため、ここでの画面への直接追加（楽観的UI）は削除し、二重表示バグを防止します。
 
     // Push通知をバックグラウンドで発火（awaitせずに即次へ）
     triggerPushNotification(txt, imgUrl);
@@ -154,10 +156,7 @@ export default function ChatApp() {
     const file = e.target.files?.[0];
     if (!file || !isDBReady) return;
     
-    // 即時UI反映
-    const tempId = Date.now();
-    const tempUrl = URL.createObjectURL(file);
-    setMessages(prev => [...prev, { id: tempId, text: '', isMine: true, imageUrl: tempUrl, time: 'Now' }]);
+    // DBからのリアルタイム通知に任せ、一時的な画面追加を削除
     
     const filePath = `uploads/${Date.now()}_${file.name}`;
     const { error } = await supabase.storage.from('chat_media').upload(filePath, file);
@@ -192,8 +191,7 @@ export default function ChatApp() {
     // 自身でDL・配置することを前提に、ローカルURLを参照
     const localUrl = `/stamps/stamp_${name}.svg`;
     
-    const tempId = Date.now();
-    setMessages(prev => [...prev, { id: tempId, text: '', isMine: true, imageUrl: localUrl, time: 'Now' }]);
+    // DBからのリアルタイム通知を待つ
     triggerPushNotification("スタンプ！", localUrl);
 
     if (isDBReady && myProfile) {
