@@ -171,7 +171,8 @@ export default function ChatApp() {
             user_id: myProfile || 'unknown'
           }, { onConflict: 'endpoint' });
         }
-        alert("通知をオンにしました！");
+        alert("通知設定を更新しました。数秒後にテスト通知が届きます。");
+        setTimeout(() => triggerPushNotification("テスト通知", "通知が正常に設定されました！"), 1000);
       } catch (err) {
         console.error('Push 購読エラー', err);
         alert("通知の設定中にエラーが発生しました。\n※iPhoneの場合は「ホーム画面に追加」から開く必要があります。");
@@ -294,13 +295,25 @@ export default function ChatApp() {
             <span style={{fontSize: '0.8rem', color:'#f43f5e', fontWeight: 600}}>※DB未接続（Vercelへのキー反映待ち）</span>
           </div>
         )}
-        {pushStatus === 'default' && (
+        
+        {pushStatus === 'denied' && (
+          <div style={{ padding: '8px 24px', background: 'rgba(244, 63, 94, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            <span style={{fontSize: '0.8rem', color:'#f43f5e', fontWeight: 600}}>【通知がブロックされています】</span>
+            <span style={{fontSize: '0.7rem', color:'#f43f5e'}}>ブラウザの「サイト設定」から通知のブロックを解除してください</span>
+          </div>
+        )}
+
+        {(pushStatus === 'default' || pushStatus === 'granted') && (
           <div style={{ padding: '12px 24px', background: 'rgba(168, 85, 247, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{display:'flex', alignItems:'center', gap:'8px', color:'var(--primary)'}}>
               <BellRing size={16} />
-              <span style={{fontSize: '0.8rem', fontWeight: 600}}>新着メッセージの通知を受け取りますか？</span>
+              <span style={{fontSize: '0.8rem', fontWeight: 600}}>
+                {pushStatus === 'granted' ? '🔔通知設定の修復・テスト' : '新着メッセージの通知を受け取りますか？'}
+              </span>
             </div>
-            <button onClick={requestPushPermission} style={{ background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>許可する</button>
+            <button onClick={requestPushPermission} style={{ background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+              {pushStatus === 'granted' ? '再登録' : '許可する'}
+            </button>
           </div>
         )}
         
