@@ -33,7 +33,7 @@ export default function Navigation() {
   };
 
   const handleSwitchProfile = () => {
-    localStorage.removeItem('bosi_profile');
+    localStorage.removeItem('boshi_profile');
     window.location.href = '/';
   };
 
@@ -49,7 +49,7 @@ export default function Navigation() {
       {/* PC: Sidebar Navigation */}
       <nav className="pc-sidebar glass-panel" style={{ overflow: 'visible' }}>
         <div style={{ padding: '24px', borderBottom: '1px solid var(--glass-border)' }}>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, background: 'var(--primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>BOSI×BOSI Talk</h1>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, background: 'var(--primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>BOSHI×BOSHI Talk</h1>
         </div>
         <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {navItems.map((item) => {

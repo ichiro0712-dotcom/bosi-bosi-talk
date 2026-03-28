@@ -80,7 +80,7 @@ export default function ChatApp() {
   }, [pushStatus, myProfile]);
 
   useEffect(() => {
-    const saved = localStorage.getItem('bosi_profile');
+    const saved = localStorage.getItem('boshi_profile');
     if (saved) setMyProfile(saved);
     setIsProfileChecking(false);
   }, []);
@@ -270,14 +270,14 @@ export default function ChatApp() {
   if (!myProfile) {
     return (
       <div style={{height: '100dvh', background: 'var(--bg-gradient)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '40px'}}>
-        <h1 style={{color: 'var(--text-main)', fontSize: '1.8rem', fontWeight: 800, textAlign:'center'}}>BOSI×BOSI Talk</h1>
+        <h1 style={{color: 'var(--text-main)', fontSize: '1.8rem', fontWeight: 800, textAlign:'center'}}>BOSHI×BOSHI Talk</h1>
         <p style={{color: 'var(--text-muted)', textAlign:'center', fontWeight:600}}>お使いになるプロフィールを<br/>選んでください</p>
         <div style={{display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center'}}>
-           <button onClick={()=>{localStorage.setItem('bosi_profile','user_a'); setMyProfile('user_a')}} style={{background:'rgba(255,255,255,0.7)', padding:'32px 40px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
+           <button onClick={()=>{localStorage.setItem('boshi_profile','user_a'); setMyProfile('user_a')}} style={{background:'rgba(255,255,255,0.7)', padding:'32px 40px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
              <span style={{fontSize:'3.5rem'}}>🦊</span>
              <span style={{fontSize:'1.1rem', fontWeight:700, color:'var(--text-main)'}}>キツネさん</span>
            </button>
-           <button onClick={()=>{localStorage.setItem('bosi_profile','user_b'); setMyProfile('user_b')}} style={{background:'rgba(255,255,255,0.7)', padding:'32px 40px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
+           <button onClick={()=>{localStorage.setItem('boshi_profile','user_b'); setMyProfile('user_b')}} style={{background:'rgba(255,255,255,0.7)', padding:'32px 40px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
              <span style={{fontSize:'3.5rem'}}>🐰</span>
              <span style={{fontSize:'1.1rem', fontWeight:700, color:'var(--text-main)'}}>ウサギさん</span>
            </button>

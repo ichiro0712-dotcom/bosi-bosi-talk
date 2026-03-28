@@ -2,7 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'BOSI×BOSI Talk',
+  title: 'BOSHI×BOSHI Talk',
   description: 'モダンで美しいLiquid Glass UIのチャット・メモアプリ',
   manifest: '/manifest.json',
 };
