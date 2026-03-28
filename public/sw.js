@@ -1,3 +1,15 @@
+self.addEventListener('install', (e) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', (e) => {
+  // PWAインストール要件を満たすためのダミーfetchハンドラ
+});
+
 self.addEventListener('push', function(event) {
   if (event.data) {
     const data = event.data.json();
