@@ -1,13 +1,24 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Plus, Image as ImageIcon, Smile, FilePlus } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, Smile, FilePlus, X } from 'lucide-react';
 import { supabase } from '../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
 const StampCreatorModal = dynamic(() => import('./components/StampCreatorModal'), { ssr: false });
 
-type Message = { id: number | string; text: string; isMine: boolean; time: string; imageUrl?: string; is_read?: boolean };
+type Message = { id: number | string; text: string; isMine: boolean; time: string; timestamp?: number; dateStr?: string; imageUrl?: string; is_read?: boolean; status?: 'sending' | 'sent' };
+
+// OGP機能をキャンセルしたため、シンプルなリンク化のみ提供します。
+function renderTextWithLinks(text: string) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return (
+    <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4', fontWeight: 500, letterSpacing: '0.02em' }}>
+      {parts.map((part, i) => urlRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" style={{color:'inherit', textDecoration:'underline'}}>{part}</a> : part)}
+    </div>
+  );
+}
 
 // VAPIDキー変換ユーティリティ
 function urlB64ToUint8Array(base64String: string) {
@@ -28,7 +39,9 @@ export default function ChatApp() {
   const [isStampModalOpen, setIsStampModalOpen] = useState(false);
   const [myProfile, setMyProfile] = useState<string | null>(null);
   const [isProfileChecking, setIsProfileChecking] = useState(true);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,7 +64,9 @@ export default function ChatApp() {
           const formatted = data.map(m => ({
             id: m.id, text: m.text, isMine: m.user_id === myProfile,
             time: new Date(m.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-            imageUrl: m.image_url, is_read: m.is_read
+            timestamp: new Date(m.created_at).getTime(),
+            dateStr: new Date(m.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
+            imageUrl: m.image_url, is_read: m.is_read, status: 'sent' as const
           }));
           setMessages(formatted);
           
@@ -74,10 +89,13 @@ export default function ChatApp() {
             const newMsg = payload.new as any;
             setMessages(prev => {
               if (prev.find(p => p.id === newMsg.id)) return prev;
-              return [...prev, {
+              const withoutTemp = prev.filter(m => !(m.id.toString().startsWith('temp_') && m.text === newMsg.text && m.imageUrl === newMsg.image_url && m.isMine === (newMsg.user_id === myProfile)));
+              return [...withoutTemp, {
                 id: newMsg.id, text: newMsg.text, isMine: newMsg.user_id === myProfile,
                 time: new Date(newMsg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-                imageUrl: newMsg.image_url, is_read: newMsg.is_read
+                timestamp: new Date(newMsg.created_at).getTime(),
+                dateStr: new Date(newMsg.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
+                imageUrl: newMsg.image_url, is_read: newMsg.is_read, status: 'sent'
               }];
             });
             // リアルタイムで受信したら、相手のメッセージのみ「既読」をつける
@@ -137,7 +155,9 @@ export default function ChatApp() {
     
     setInputText("");
     
-    // Supabaseからリアルタイムでデータが届くため、ここでの画面への直接追加（楽観的UI）は削除し、二重表示バグを防止します。
+    // オプティミスティックUI（送信中ステータス付与）
+    const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(7);
+    setMessages(prev => [...prev, { id: tempId, text: txt, isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: imgUrl }]);
 
     // Push通知をバックグラウンドで発火（awaitせずに即次へ）
     triggerPushNotification(txt, imgUrl);
@@ -156,7 +176,10 @@ export default function ChatApp() {
     const file = e.target.files?.[0];
     if (!file || !isDBReady) return;
     
-    // DBからのリアルタイム通知に任せ、一時的な画面追加を削除
+    // 送信中ステータスで画面追加
+    const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(7);
+    const tempUrl = URL.createObjectURL(file);
+    setMessages(prev => [...prev, { id: tempId, text: '', isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: tempUrl }]);
     
     const filePath = `uploads/${Date.now()}_${file.name}`;
     const { error } = await supabase.storage.from('chat_media').upload(filePath, file);
@@ -191,7 +214,9 @@ export default function ChatApp() {
     // 自身でDL・配置することを前提に、ローカルURLを参照
     const localUrl = `/stamps/stamp_${name}.svg`;
     
-    // DBからのリアルタイム通知を待つ
+    // 即座に送信中を表示
+    const tempId = 'temp_' + Date.now();
+    setMessages(prev => [...prev, { id: tempId, text: '', isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: localUrl }]);
     triggerPushNotification("スタンプ！", localUrl);
 
     if (isDBReady && myProfile) {
@@ -229,29 +254,51 @@ export default function ChatApp() {
           </div>
         )}
         
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {messages.map((msg) => (
-            <div key={msg.id} style={{ alignSelf: msg.isMine ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-              {(!msg.text && msg.imageUrl) ? (
-                <div>
-                  <img src={msg.imageUrl} alt="stamp" style={{ width: '160px', height: '160px', objectFit: 'contain', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' }} />
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {messages.map((msg, index) => {
+            const prevMsg = index > 0 ? messages[index - 1] : null;
+            const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
+            const showDate = !prevMsg || prevMsg.dateStr !== msg.dateStr;
+            const isGrouped = prevMsg && prevMsg.isMine === msg.isMine && ((msg.timestamp || 0) - (prevMsg.timestamp || 0) < 60000) && !showDate;
+            const isNextGrouped = nextMsg && nextMsg.isMine === msg.isMine && ((nextMsg.timestamp || 0) - (msg.timestamp || 0) < 60000) && nextMsg.dateStr === msg.dateStr;
+
+            return (
+              <React.Fragment key={msg.id}>
+                {showDate && (
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '24px 0 16px' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.1)', color: '#fff', fontSize: '0.7rem', fontWeight: 600, padding: '4px 12px', borderRadius: '12px', backdropFilter: 'blur(4px)' }}>
+                      {msg.dateStr}
+                    </div>
+                  </div>
+                )}
+                <div style={{ alignSelf: msg.isMine ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '6px', maxWidth: '80%', marginTop: isGrouped ? '2px' : '12px' }}>
+                  {(!msg.text && msg.imageUrl) ? (
+                    <div>
+                      <img src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && setPreviewImage(msg.imageUrl!)} style={{ width: '160px', height: '160px', objectFit: 'contain', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: msg.isMine ? 'var(--primary)' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
+                      borderTopRightRadius: (msg.isMine && isGrouped) ? '4px' : '18px',
+                      borderTopLeftRadius: (!msg.isMine && isGrouped) ? '4px' : '18px',
+                      borderBottomRightRadius: (msg.isMine && !isNextGrouped) ? '4px' : '18px',
+                      borderBottomLeftRadius: (!msg.isMine && !isNextGrouped) ? '4px' : '18px',
+                      color: msg.isMine ? '#ffffff' : 'var(--text-main)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content'
+                    }}>
+                      {msg.text && renderTextWithLinks(msg.text)}
+                      {msg.imageUrl && <img src={msg.imageUrl} alt="attached" onClick={() => setPreviewImage(msg.imageUrl!)} style={{ width: '200px', height: '200px', objectFit: 'cover', marginTop: msg.text ? '8px' : '0', borderRadius: '12px', cursor: 'pointer' }} />}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start', justifyContent: 'flex-end', paddingBottom: '2px', opacity: msg.status === 'sending' ? 0.5 : 1 }}>
+                    {msg.isMine && msg.is_read && <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', lineHeight: '1', marginBottom: '2px' }}>既読</span>}
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems:'center', gap: '2px', lineHeight: '1' }}>
+                      {msg.status === 'sending' ? '↗' : msg.time}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div style={{
-                  background: msg.isMine ? 'var(--primary)' : 'rgba(255, 255, 255, 0.95)', padding: '12px 16px', borderRadius: '18px',
-                  borderBottomRightRadius: msg.isMine ? '4px' : '18px', borderBottomLeftRadius: msg.isMine ? '18px' : '4px',
-                  color: msg.isMine ? '#ffffff' : 'var(--text-main)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content'
-                }}>
-                  {msg.text && <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4', fontWeight: 500, letterSpacing: '0.02em' }}>{msg.text}</div>}
-                  {msg.imageUrl && <img src={msg.imageUrl} alt="stamp" style={{ width: '150px', height: '150px', objectFit: 'contain', marginTop: '8px', borderRadius: '8px' }} />}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '6px', padding: msg.isMine ? '0 4px 0 0' : '0 0 0 4px' }}>
-                {msg.isMine && msg.is_read && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>既読</span>}
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{msg.time}</span>
-              </div>
-            </div>
-          ))}
+              </React.Fragment>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
 
@@ -305,14 +352,33 @@ export default function ChatApp() {
             <button onClick={() => {setShowAttachMenu(!showAttachMenu); setShowStampPicker(false);}} style={{ color: 'var(--text-muted)', background:'none', border:'none', cursor:'pointer', padding:'4px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', transition:'0.2s', backgroundColor: showAttachMenu ? 'rgba(0,0,0,0.05)' : 'transparent' }}>
               <Plus size={24} style={{ transform: showAttachMenu ? 'rotate(45deg)' : 'none', transition: 'all 0.2s' }} />
             </button>
-            <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="メッセージを入力してください... (送信はEnter)" style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '1rem', padding: '8px 0' }} />
+            <textarea
+              ref={textareaRef}
+              value={inputText}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); if (textareaRef.current) textareaRef.current.style.height = 'auto'; }
+              }}
+              placeholder="メッセージを入力してください..."
+              rows={1}
+              style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '1rem', padding: '8px 0', resize: 'none', maxHeight: '120px' }}
+            />
             <button onClick={() => handleSend()} style={{ background: inputText ? 'var(--primary-hover)' : '#e2e8f0', color: inputText ? 'white' : 'var(--text-muted)', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: inputText ? 'pointer' : 'default', transition: 'all 0.2s' }}>
               <Send size={18} style={{ transform: 'translate(1px, 1px)' }} />
             </button>
           </div>
         </div>
       </div>
+      {previewImage && (
+        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.85)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(5px)'}} onClick={() => setPreviewImage(null)}>
+          <button style={{position:'absolute', top:20, right:20, background:'rgba(255,255,255,0.2)', border:'none', color:'white', borderRadius:'50%', padding:8, cursor:'pointer'}}><X size={32}/></button>
+          <img src={previewImage} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
       {isStampModalOpen && <StampCreatorModal onClose={() => setIsStampModalOpen(false)} onSave={handleStampSave} />}
     </>
   );
