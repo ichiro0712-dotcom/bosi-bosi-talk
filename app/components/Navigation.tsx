@@ -39,7 +39,7 @@ export default function Navigation() {
 
   const navItems = [
     { name: 'チャット', href: '/', icon: MessageCircle },
-    { name: '写真', href: 'https://photos.app.goo.gl/U7nscr2zKsxzYZrd6', icon: ImageIcon, external: true },
+    { name: 'アルバム', href: 'https://photos.app.goo.gl/U7nscr2zKsxzYZrd6', icon: ImageIcon, external: true },
     { name: 'メモ（共有）', href: '/memos', icon: FileText },
     { name: '', isMenuBtn: true, icon: MoreVertical }
   ];

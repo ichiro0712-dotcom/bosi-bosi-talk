@@ -96,12 +96,12 @@ body {
   align-items: center;
   justify-content: center;
   padding: 12px 0;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.6);
   transition: all 0.2s;
 }
 
 .bottom-nav-item.active {
-  color: var(--primary);
+  color: #ffffff;
 }
 
 /* Chat/Main Content Area specific classes */
@@ -204,10 +204,10 @@ button {
     display: flex;
     justify-content: space-around;
     height: 70px;
-    background: rgba(255, 255, 255, 0.85); /* 明るい iOS風メニュー */
+    background: var(--primary);
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(30px);
-    border-top: 1px solid var(--glass-border);
+    border-top: none;
     position: fixed;
     bottom: 0;
     left: 0;
