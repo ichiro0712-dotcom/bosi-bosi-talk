@@ -187,13 +187,18 @@ export default function ChatApp() {
       const res = await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: isTest ? "テスト通知" : "チームチャット（新規）", body: text || "スタンプが送信されました！", imageUrl })
+        body: JSON.stringify({
+          title: isTest ? "テスト通知" : "BOSHI×BOSHI Talk",
+          body: text || "スタンプが送信されました！",
+          imageUrl,
+          senderUserId: isTest ? undefined : myProfile
+        })
       });
       const data = await res.json();
       if (isTest) setDebugLog("結果: " + JSON.stringify(data));
-    } catch(e: any) { 
+    } catch(e: any) {
       if (isTest) setDebugLog("例外発生: " + e.message);
-      console.error(e); 
+      console.error(e);
     }
   };
 

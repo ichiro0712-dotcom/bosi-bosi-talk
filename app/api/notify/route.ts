@@ -15,20 +15,24 @@ export async function POST(req: Request) {
       console.warn("VAPID Keys are not set, push notification will be skipped.");
     }
 
-    const { title, body, imageUrl } = await req.json();
+    const { title, body, imageUrl, senderUserId } = await req.json();
 
-    // 購読者リストをSupabaseから全件取得
-    const { data: subs, error } = await supabase.from('subscriptions').select('*');
+    // 購読者リストをSupabaseから取得（送信者自身を除外）
+    let query = supabase.from('subscriptions').select('*');
+    if (senderUserId) {
+      query = query.neq('user_id', senderUserId);
+    }
+    const { data: subs, error } = await query;
     if (error) throw error;
     if (!subs || subs.length === 0) {
-      return NextResponse.json({ success: true, message: 'No active subscriptions' });
+      return NextResponse.json({ success: true, message: 'No active subscriptions (or sender excluded)' });
     }
 
     const payload = JSON.stringify({
       title: title || "新着メッセージ",
       body: body || "チャットアプリから通知",
       icon: '/icon-192x192.png',
-      image: imageUrl, // PWAに画像プレビューを表示
+      image: imageUrl || undefined,
     });
 
     const sendResults = await Promise.all(subs.map(async (sub) => {
