@@ -5,8 +5,8 @@
   --glass-border: rgba(255, 255, 255, 0.9);
   --glass-blur: blur(24px);
   
-  --primary: #e9d5ff; /* 元の淡いラベンダー色 */
-  --primary-hover: #d6bcfa;
+  --primary: #9370db; /* フッターメニューと同じ紫 */
+  --primary-hover: #7e57c2; /* 少し暗めのホバー用紫 */
   
   --text-main: #334155;
   --text-muted: #64748b;
@@ -204,7 +204,7 @@ button {
     display: flex;
     justify-content: space-around;
     height: 70px;
-    background: #9370db;
+    background: var(--primary);
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(30px);
     border-top: none;

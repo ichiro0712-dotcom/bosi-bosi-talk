@@ -3,11 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell } from 'lucide-react';
+import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell, Clock, Home, Heart } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+const ReminderModal = dynamic(() => import('./ReminderModal'), { ssr: false });
+const AnniversaryModal = dynamic(() => import('./AnniversaryModal'), { ssr: false });
 
 export default function Navigation() {
   const pathname = usePathname();
   const [showMenu, setShowMenu] = useState(false);
+  const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
+  const [isAnniversaryMenuOpen, setIsAnniversaryMenuOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
@@ -59,7 +65,8 @@ export default function Navigation() {
   };
 
   const navItems = [
-    { name: 'チャット', href: '/', icon: MessageCircle },
+    { name: 'HOME', href: '/', icon: Home },
+    { name: 'チャット', href: '/chat', icon: MessageCircle },
     { name: 'アルバム', href: 'https://photos.app.goo.gl/U7nscr2zKsxzYZrd6', icon: ImageIcon, external: true },
     { name: 'メモ（共有）', href: '/memos', icon: FileText },
     { name: '', isMenuBtn: true, icon: MoreVertical }
@@ -97,6 +104,14 @@ export default function Navigation() {
                       <button onClick={handleTestNotification} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                         <Bell size={18} />
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testNotifyStatus || '通知テスト'}</span>
+                      </button>
+                      <button onClick={() => { setShowMenu(false); setIsAnniversaryMenuOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                        <Heart size={18} color="#e11d48" />
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>記念日設定</span>
+                      </button>
+                      <button onClick={() => { setShowMenu(false); setIsReminderMenuOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                        <Clock size={18} />
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>リマインダ設定</span>
                       </button>
                       <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                         <Download size={18} />
@@ -153,6 +168,14 @@ export default function Navigation() {
                       <Bell size={18} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testNotifyStatus || '通知テスト'}</span>
                     </button>
+                    <button onClick={() => { setShowMenu(false); setIsAnniversaryMenuOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                      <Heart size={18} color="#e11d48" />
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>記念日設定</span>
+                    </button>
+                    <button onClick={() => { setShowMenu(false); setIsReminderMenuOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                      <Clock size={18} />
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>リマインダ設定</span>
+                    </button>
                     <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                       <Download size={18} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>アプリDL</span>
@@ -186,6 +209,9 @@ export default function Navigation() {
           onClick={() => setShowMenu(false)}
         />
       )}
+      
+      {isReminderMenuOpen && <ReminderModal onClose={() => setIsReminderMenuOpen(false)} />}
+      {isAnniversaryMenuOpen && <AnniversaryModal onClose={() => setIsAnniversaryMenuOpen(false)} />}
     </>
   );
 }
