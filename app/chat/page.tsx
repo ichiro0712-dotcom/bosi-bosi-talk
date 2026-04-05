@@ -41,6 +41,7 @@ export default function ChatApp() {
   const [isProfileChecking, setIsProfileChecking] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string>('granted'); // hidden by default unless proven otherwise
+  const [isMochiMode, setIsMochiMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -220,6 +221,19 @@ export default function ChatApp() {
       const { error } = await supabase.from('messages').insert([{ text: txt, image_url: imgUrl, user_id: myProfile }]);
       if (error) {
         console.error("Message send error", error);
+      } else {
+        // もちモードがONであれば、送信直後にAPIを叩く
+        if (isMochiMode && txt && !imgUrl) {
+           const userName = myProfile === 'user_a' ? 'ミルク' : myProfile === 'user_b' ? 'メリー' : '誰か';
+           // UI上の演出：自分側ですぐにモードをOFFにする（連投防止や通常モードへの回帰）
+           setIsMochiMode(false);
+           
+           fetch('/api/mochi', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ text: txt, userId: myProfile, userName })
+           }).catch(err => console.error("Mochi API call failed", err));
+        }
       }
     }
   };
@@ -384,6 +398,13 @@ export default function ChatApp() {
                 <div style={{background:'#dbeafe', borderRadius:'50%', width:50, height:50, display:'flex', alignItems:'center', justifyContent:'center', color:'#2563eb'}}><FilePlus size={24} /></div>
                 <span style={{fontSize:'0.75rem', fontWeight:600, color:'var(--text-muted)'}}>スタンプ作成</span>
               </div>
+              
+              <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'8px', cursor:'pointer'}} onClick={() => {setShowAttachMenu(false); setIsMochiMode(prev => !prev);}}>
+                <div style={{background: isMochiMode ? '#cbd5e1' : '#f1f5f9', borderRadius:'50%', width:50, height:50, display:'flex', alignItems:'center', justifyContent:'center', border: isMochiMode ? '2px solid #333' : 'none'}}>
+                  <img src="/mochi.png" alt="mochi" style={{width:'32px', height:'32px', objectFit:'contain'}} />
+                </div>
+                <span style={{fontSize:'0.75rem', fontWeight:600, color: isMochiMode ? '#333' : 'var(--text-muted)'}}>{isMochiMode ? 'もちモード中' : 'もちと話す'}</span>
+              </div>
             </div>
           )}
 
@@ -407,7 +428,7 @@ export default function ChatApp() {
             </div>
           )}
 
-          <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.65)', border: '1px solid var(--glass-border)', borderRadius: '24px', padding: '8px 16px', alignItems: 'center', gap: '12px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+          <div style={{ display: 'flex', background: isMochiMode ? '#f8fafc' : 'rgba(255, 255, 255, 0.65)', border: isMochiMode ? '2px solid #cbd5e1' : '1px solid var(--glass-border)', borderRadius: '24px', padding: '8px 16px', alignItems: 'center', gap: '12px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)', transition: 'all 0.3s' }}>
             <button onClick={() => {setShowAttachMenu(!showAttachMenu); setShowStampPicker(false);}} style={{ color: 'var(--text-muted)', background:'none', border:'none', cursor:'pointer', padding:'4px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', transition:'0.2s', backgroundColor: showAttachMenu ? 'rgba(0,0,0,0.05)' : 'transparent' }}>
               <Plus size={24} style={{ transform: showAttachMenu ? 'rotate(45deg)' : 'none', transition: 'all 0.2s' }} />
             </button>
@@ -420,7 +441,7 @@ export default function ChatApp() {
                 e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
               }}
               onKeyDown={() => { /* default behavior: enter adds newline */ }}
-              placeholder="メッセージを入力してください..."
+              placeholder={isMochiMode ? "もちに話しかける..." : "メッセージを入力してください..."}
               rows={1}
               style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '1rem', padding: '8px 0', resize: 'none', maxHeight: '120px' }}
             />

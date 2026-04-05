@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/genai": "^0.1.2",
     "@imgly/background-removal": "^1.4.3",
     "@supabase/supabase-js": "^2.39.0",
     "lucide-react": "latest",
