@@ -21,11 +21,14 @@ export default function Home() {
     if (!profile) return;
     
     // DB挿入
-    await supabase.from('messages').insert([{
+    const { error: dbErr } = await supabase.from('messages').insert([{
       text: text,
       user_id: 'mochi',
       is_read: false
     }]);
+    if (dbErr) {
+      console.error("Mochi msg insert error:", dbErr);
+    }
 
     // プッシュ通知
     try {
@@ -39,7 +42,7 @@ export default function Home() {
         })
       });
     } catch (e) {
-      console.error(e);
+      console.error("Notification API error:", e);
     }
   };
 
@@ -110,8 +113,10 @@ export default function Home() {
 
   // 長押し判定用
   const handleTouchStart = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       document.getElementById('top-image-upload')?.click();
+      timerRef.current = null;
     }, 800); // 800ms
   };
 
@@ -121,8 +126,10 @@ export default function Home() {
 
   const handleCounterTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       setShowAnnivModal(true);
+      timerRef.current = null;
     }, 800);
   };
 
@@ -133,6 +140,8 @@ export default function Home() {
     // アップロード中は仮に見せる（オプティミスティックUI）
     const tempUrl = URL.createObjectURL(file);
     setSettings(prev => prev ? { ...prev, top_image_url: tempUrl } : { anniversary_date: null, top_image_url: tempUrl });
+    // inputをクリアして再選択可能にする
+    e.target.value = '';
 
     const ext = file.name.split('.').pop() || 'jpg';
     const filePath = `top_images/${Date.now()}_bg.${ext}`;
@@ -161,11 +170,12 @@ export default function Home() {
        const userName = profile === 'user_a' ? 'ミルク' : profile === 'user_b' ? 'メリー' : '誰か';
        await postMochiMessage(`${userName}さんが、トップ画面の背景画像を変更しました！📸`);
        
-       fetchSettings();
+       // ローカルのStateだけを更新し、fetchSettings()のようなLoadingUIを出さない（ちらつき防止）
+       setSettings(prev => prev ? { ...prev, top_image_url: data.publicUrl } : { anniversary_date: null, top_image_url: data.publicUrl });
     } else {
        alert("画像のアップロードエラー: " + error.message);
-       console.error(error);
-       fetchSettings(); // revert
+       console.error("Upload error:", error);
+       fetchSettings(); // reverting
     }
   };
 
