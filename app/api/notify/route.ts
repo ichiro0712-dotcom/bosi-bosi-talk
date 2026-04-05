@@ -45,7 +45,10 @@ export async function POST(req: Request) {
       };
       
       try {
-        await webPush.sendNotification(pushSubscription, payload);
+        await webPush.sendNotification(pushSubscription, payload, {
+          urgency: 'high',
+          TTL: 60 * 60,
+        });
         return { success: true, endpoint: sub.endpoint };
       } catch (err: any) {
         if (err.statusCode === 410 || err.statusCode === 404) {

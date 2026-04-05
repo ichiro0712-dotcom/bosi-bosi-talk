@@ -172,8 +172,8 @@ export default function ChatApp() {
             user_id: myProfile || 'unknown'
           }, { onConflict: 'endpoint' });
         }
-        alert("通知設定を更新しました。数秒後にテスト通知が届きます。");
-        setTimeout(() => triggerPushNotification("テスト送信です", undefined, true), 1000);
+        alert("通知の許可が完了しました！");
+        setTimeout(() => sendTestNotification(), 1000);
       } catch (err) {
         console.error('Push 購読エラー', err);
         alert("通知の設定中にエラーが発生しました。\n※iPhoneの場合は「ホーム画面に追加」から開く必要があります。");
@@ -181,24 +181,41 @@ export default function ChatApp() {
     }
   };
 
-  const triggerPushNotification = async (text: string, imageUrl?: string, isTest?: boolean) => {
+  const triggerPushNotification = async (text: string, imageUrl?: string) => {
     try {
-      setDebugLog("送信中...");
+      await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: "BOSHI×BOSHI Talk",
+          body: text || "スタンプが送信されました！",
+          imageUrl,
+          senderUserId: myProfile
+        })
+      });
+    } catch(e: any) {
+      console.error(e);
+    }
+  };
+
+  const sendTestNotification = async () => {
+    setDebugLog("テスト送信中...");
+    try {
       const res = await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: isTest ? "テスト通知" : "BOSHI×BOSHI Talk",
-          body: text || "スタンプが送信されました！",
-          imageUrl,
-          senderUserId: isTest ? undefined : myProfile
+          title: "BOSHI×BOSHI Talk",
+          body: "テスト通知です。この通知が届いていれば正常です！",
+          senderUserId: undefined
         })
       });
       const data = await res.json();
-      if (isTest) setDebugLog("結果: " + JSON.stringify(data));
+      setDebugLog(data.success ? "通知送信OK" : "エラー: " + JSON.stringify(data));
+      setTimeout(() => setDebugLog(''), 5000);
     } catch(e: any) {
-      if (isTest) setDebugLog("例外発生: " + e.message);
-      console.error(e);
+      setDebugLog("例外: " + e.message);
+      setTimeout(() => setDebugLog(''), 5000);
     }
   };
 
@@ -321,16 +338,26 @@ export default function ChatApp() {
           </div>
         )}
 
-        {(pushStatus === 'default' || pushStatus === 'granted') && (
+        {pushStatus === 'default' && (
           <div style={{ padding: '12px 24px', background: 'rgba(168, 85, 247, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{display:'flex', alignItems:'center', gap:'8px', color:'var(--primary)'}}>
               <BellRing size={16} />
-              <span style={{fontSize: '0.8rem', fontWeight: 600}}>
-                {pushStatus === 'granted' ? '🔔通知設定の修復・テスト' : '新着メッセージの通知を受け取りますか？'}
-              </span>
+              <span style={{fontSize: '0.8rem', fontWeight: 600}}>新着メッセージの通知を受け取りますか？</span>
             </div>
             <button onClick={requestPushPermission} style={{ background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-              {pushStatus === 'granted' ? '再登録' : '許可する'}
+              許可する
+            </button>
+          </div>
+        )}
+
+        {pushStatus === 'granted' && (
+          <div style={{ padding: '8px 24px', background: 'rgba(168, 85, 247, 0.06)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px', color:'var(--text-muted)'}}>
+              <BellRing size={14} />
+              <span style={{fontSize: '0.75rem', fontWeight: 600}}>通知が届くかテストできます</span>
+            </div>
+            <button onClick={sendTestNotification} style={{ background: 'var(--primary)', color: 'white', padding: '5px 14px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+              通知テスト
             </button>
           </div>
         )}
