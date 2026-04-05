@@ -41,7 +41,6 @@ export default function ChatApp() {
   const [isProfileChecking, setIsProfileChecking] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string>('granted'); // hidden by default unless proven otherwise
-  const [debugLog, setDebugLog] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -173,7 +172,6 @@ export default function ChatApp() {
           }, { onConflict: 'endpoint' });
         }
         alert("通知の許可が完了しました！");
-        setTimeout(() => sendTestNotification(), 1000);
       } catch (err) {
         console.error('Push 購読エラー', err);
         alert("通知の設定中にエラーが発生しました。\n※iPhoneの場合は「ホーム画面に追加」から開く必要があります。");
@@ -198,26 +196,6 @@ export default function ChatApp() {
     }
   };
 
-  const sendTestNotification = async () => {
-    setDebugLog("テスト送信中...");
-    try {
-      const res = await fetch('/api/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: "BOSHI×BOSHI Talk",
-          body: "テスト通知です。この通知が届いていれば正常です！",
-          senderUserId: undefined
-        })
-      });
-      const data = await res.json();
-      setDebugLog(data.success ? "通知送信OK" : "エラー: " + JSON.stringify(data));
-      setTimeout(() => setDebugLog(''), 5000);
-    } catch(e: any) {
-      setDebugLog("例外: " + e.message);
-      setTimeout(() => setDebugLog(''), 5000);
-    }
-  };
 
   const handleSend = async (textOveride?: string, imgUrl?: string) => {
     const txt = textOveride || inputText;
@@ -325,12 +303,6 @@ export default function ChatApp() {
           </div>
         )}
         
-        {debugLog && (
-          <div style={{ padding: '8px 24px', background: '#333', borderBottom: '1px solid var(--glass-border)', wordBreak: 'break-all' }}>
-            <span style={{fontSize: '0.75rem', color:'#0f0', fontFamily: 'monospace'}}>{debugLog}</span>
-          </div>
-        )}
-
         {pushStatus === 'denied' && (
           <div style={{ padding: '8px 24px', background: 'rgba(244, 63, 94, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
             <span style={{fontSize: '0.8rem', color:'#f43f5e', fontWeight: 600}}>【通知がブロックされています】</span>
@@ -339,25 +311,13 @@ export default function ChatApp() {
         )}
 
         {pushStatus === 'default' && (
-          <div style={{ padding: '12px 24px', background: 'rgba(168, 85, 247, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{display:'flex', alignItems:'center', gap:'8px', color:'var(--primary)'}}>
+          <div style={{ padding: '12px 24px', background: 'rgba(147, 112, 219, 0.1)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px', color:'#9370db'}}>
               <BellRing size={16} />
               <span style={{fontSize: '0.8rem', fontWeight: 600}}>新着メッセージの通知を受け取りますか？</span>
             </div>
-            <button onClick={requestPushPermission} style={{ background: 'var(--primary)', color: 'white', padding: '6px 16px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+            <button onClick={requestPushPermission} style={{ background: '#9370db', color: 'white', padding: '6px 16px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
               許可する
-            </button>
-          </div>
-        )}
-
-        {pushStatus === 'granted' && (
-          <div style={{ padding: '8px 24px', background: 'rgba(168, 85, 247, 0.06)', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{display:'flex', alignItems:'center', gap:'8px', color:'var(--text-muted)'}}>
-              <BellRing size={14} />
-              <span style={{fontSize: '0.75rem', fontWeight: 600}}>通知が届くかテストできます</span>
-            </div>
-            <button onClick={sendTestNotification} style={{ background: 'var(--primary)', color: 'white', padding: '5px 14px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-              通知テスト
             </button>
           </div>
         )}

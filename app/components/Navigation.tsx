@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download } from 'lucide-react';
+import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell } from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -35,6 +35,27 @@ export default function Navigation() {
   const handleSwitchProfile = () => {
     localStorage.removeItem('boshi_profile');
     window.location.href = '/';
+  };
+
+  const [testNotifyStatus, setTestNotifyStatus] = useState<string>('');
+  const handleTestNotification = async () => {
+    setShowMenu(false);
+    setTestNotifyStatus('送信中...');
+    try {
+      const res = await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: "BOSHI×BOSHI Talk",
+          body: "テスト通知です。この通知が届いていれば正常です！"
+        })
+      });
+      const data = await res.json();
+      setTestNotifyStatus(data.success ? '送信OK！' : 'エラー');
+    } catch {
+      setTestNotifyStatus('送信失敗');
+    }
+    setTimeout(() => setTestNotifyStatus(''), 3000);
   };
 
   const navItems = [
@@ -73,6 +94,10 @@ export default function Navigation() {
                       padding: '8px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '4px',
                       minWidth: '160px', zIndex: 100, border: '1px solid var(--glass-border)'
                     }}>
+                      <button onClick={handleTestNotification} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                        <Bell size={18} />
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testNotifyStatus || '通知テスト'}</span>
+                      </button>
                       <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                         <Download size={18} />
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>アプリDL</span>
@@ -124,6 +149,10 @@ export default function Navigation() {
                     minWidth: '160px', zIndex: 100, border: '1px solid var(--glass-border)',
                     boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
                   }}>
+                    <button onClick={handleTestNotification} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                      <Bell size={18} />
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testNotifyStatus || '通知テスト'}</span>
+                    </button>
                     <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                       <Download size={18} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>アプリDL</span>
