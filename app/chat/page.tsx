@@ -235,12 +235,15 @@ export default function ChatApp() {
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ text: txt, userId: myProfile, userName })
            })
-           .then(res => res.json())
-           .then(data => {
+           .then(async res => {
+             const data = await res.json().catch(() => null);
+             if (!res.ok) throw new Error(data?.error || `HTTP error ${res.status}`);
              console.log("Mochi response:", data);
            })
            .catch(err => {
              console.error("Mochi API call failed", err);
+             // サーバー側のクラッシュや通信エラーの場合、直接UIにエラーを出す
+             setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（通信エラーでもちがお出かけしています... ${err.message} 🍡）`, isMine: false, user_id: 'mochi', time: '送信失敗' }]);
            })
            .finally(() => {
              setIsMochiTyping(false);
