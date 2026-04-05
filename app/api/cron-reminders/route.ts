@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import webPush from 'web-push';
 
 // Vercel Cron から呼ばれることを想定
 export async function GET(request: Request) {
@@ -35,12 +36,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No pending reminders' });
     }
 
+    if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+      webPush.setVapidDetails(
+        process.env.VAPID_SUBJECT || 'mailto:vibe@example.com',
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY
+      );
+    }
+
     const messagesToInsert = [];
     const remindersToUpdate = [];
-    const remindersToDeactivate = [];
-
-    // もちのアイコンのURL（一旦決め打ち。画像はユーザー側でpublicに配置）
-    const mochiIconUrl = '/mochi.png';
+    const remindersToDelete = [];
 
     for (const reminder of reminders) {
       // 1. メッセージ投稿用のデータを作成
@@ -53,7 +59,7 @@ export async function GET(request: Request) {
 
       // 2. スケジュールの更新または無効化
       if (reminder.schedule_type === 'once') {
-        remindersToDeactivate.push(reminder.id);
+        remindersToDelete.push(reminder.id);
       } else {
         // 'daily', 'weekly', 'monthly', 'monthly_nth' に応じた次の実行日時を計算
         let nextRun = new Date(reminder.next_run_at);
@@ -120,10 +126,36 @@ export async function GET(request: Request) {
       }
     }
 
-    // 3. メッセージをまとめてINSERT
+    // 3. メッセージをまとめてINSERTし、プッシュ通知を実行
     if (messagesToInsert.length > 0) {
       const { error: insertError } = await supabase.from('messages').insert(messagesToInsert);
       if (insertError) console.error("Error inserting messages:", insertError);
+      
+      const { data: subs } = await supabase.from('subscriptions').select('*');
+      if (subs && subs.length > 0) {
+         for (const msg of messagesToInsert) {
+            const payload = JSON.stringify({
+              title: "もち 🍡",
+              body: msg.text,
+              icon: '/mochi.png'
+            });
+            for (const sub of subs) {
+              try {
+                await webPush.sendNotification({
+                  endpoint: sub.endpoint,
+                  keys: {
+                    p256dh: sub.p256dh,
+                    auth: sub.auth
+                  }
+                }, payload, { urgency: 'high', TTL: 60 * 60 });
+              } catch (e: any) {
+                if (e.statusCode === 410 || e.statusCode === 404) {
+                   await supabase.from('subscriptions').delete().eq('id', sub.id);
+                }
+              }
+            }
+         }
+      }
     }
 
     // 4. 定期リマインダーの次回実行日時の更新
@@ -133,11 +165,11 @@ export async function GET(request: Request) {
         .eq('id', updateData.id);
     }
 
-    // 5. 単発リマインダーを無効化
-    if (remindersToDeactivate.length > 0) {
+    // 5. 単発リマインダーを削除
+    if (remindersToDelete.length > 0) {
       await supabase.from('scheduled_reminders')
-        .update({ is_active: false })
-        .in('id', remindersToDeactivate);
+        .delete()
+        .in('id', remindersToDelete);
     }
 
     return NextResponse.json({ 
