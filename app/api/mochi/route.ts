@@ -70,7 +70,10 @@ export async function POST(req: Request) {
     const aiReply = completion.choices[0]?.message?.content?.trim();
 
     if (aiReply) {
-      await insertMochiMessage(aiReply);
+      const insertError = await insertMochiMessage(aiReply);
+      if (insertError) {
+        return NextResponse.json({ error: `Supabase Insert Error: ${JSON.stringify(insertError)}` }, { status: 500 });
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -91,7 +94,7 @@ async function insertMochiMessage(text: string) {
   
   if (error) {
     console.error("Failed to insert mochi message:", error);
-    return;
+    return error;
   }
 
   try {
