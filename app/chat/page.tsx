@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 
 const StampCreatorModal = dynamic(() => import('../components/StampCreatorModal'), { ssr: false });
 
-type Message = { id: number | string; text: string; isMine: boolean; time: string; timestamp?: number; dateStr?: string; imageUrl?: string; is_read?: boolean; status?: 'sending' | 'sent'; user_id?: string };
+type Message = { id: number | string; text: string; isMine: boolean; time: string; timestamp?: number; dateStr?: string; imageUrl?: string; is_read?: boolean; status?: 'sending' | 'sent'; user_id?: string; target_user?: string };
 
 // OGP機能をキャンセルしたため、シンプルなリンク化のみ提供します。
 function renderTextWithLinks(text: string) {
@@ -42,6 +42,7 @@ export default function ChatApp() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string>('granted'); // hidden by default unless proven otherwise
   const [isMochiMode, setIsMochiMode] = useState(false);
+  const [isMochiTyping, setIsMochiTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -211,14 +212,14 @@ export default function ChatApp() {
     
     // オプティミスティックUI（送信中ステータス付与）
     const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(7);
-    setMessages(prev => [...prev, { id: tempId, text: txt, isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: imgUrl }]);
+    setMessages(prev => [...prev, { id: tempId, text: txt, isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: imgUrl, target_user: isMochiMode ? 'mochi' : undefined }]);
 
     // Push通知をバックグラウンドで発火（awaitせずに即次へ）
     triggerPushNotification(txt, imgUrl);
 
     if (isDBReady && myProfile) {
       // サーバーへ本送信
-      const { error } = await supabase.from('messages').insert([{ text: txt, image_url: imgUrl, user_id: myProfile }]);
+      const { error } = await supabase.from('messages').insert([{ text: txt, image_url: imgUrl, user_id: myProfile, target_user: isMochiMode ? 'mochi' : null }]);
       if (error) {
         console.error("Message send error", error);
       } else {
@@ -227,12 +228,23 @@ export default function ChatApp() {
            const userName = myProfile === 'user_a' ? 'ミルク' : myProfile === 'user_b' ? 'メリー' : '誰か';
            // UI上の演出：自分側ですぐにモードをOFFにする（連投防止や通常モードへの回帰）
            setIsMochiMode(false);
+           setIsMochiTyping(true);
            
            fetch('/api/mochi', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ text: txt, userId: myProfile, userName })
-           }).catch(err => console.error("Mochi API call failed", err));
+           })
+           .then(res => res.json())
+           .then(data => {
+             console.log("Mochi response:", data);
+           })
+           .catch(err => {
+             console.error("Mochi API call failed", err);
+           })
+           .finally(() => {
+             setIsMochiTyping(false);
+           });
         }
       }
     }
@@ -351,7 +363,7 @@ export default function ChatApp() {
                     </div>
                   ) : (
                     <div style={{
-                      background: msg.user_id === 'mochi' ? '#e2e8f0' : msg.isMine ? '#f0c8f7' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
+                      background: (msg.user_id === 'mochi' || msg.target_user === 'mochi') ? '#e2e8f0' : msg.isMine ? '#f0c8f7' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
                       borderTopRightRadius: (msg.isMine && isGrouped) ? '4px' : '18px',
                       borderTopLeftRadius: (!msg.isMine && isGrouped) ? '4px' : '18px',
                       borderBottomRightRadius: (msg.isMine && !isNextGrouped) ? '4px' : '18px',
@@ -372,6 +384,18 @@ export default function ChatApp() {
               </React.Fragment>
             );
           })}
+          {isMochiTyping && (
+             <div style={{ alignSelf: 'flex-start', display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: '6px', maxWidth: '80%', marginTop: '12px' }}>
+                <img src="/mochi.png" alt="mochi" style={{width: '36px', height: '36px', borderRadius: '50%', objectFit: 'contain', padding: '4px', boxSizing: 'border-box', background: '#fff', border: '1px solid var(--glass-border)', opacity: 0.8, animation: 'pulse 1.5s infinite'}} />
+                <div style={{ background: '#e2e8f0', padding: '10px 14px', borderRadius: '18px', borderBottomLeftRadius: '4px', color: 'var(--text-muted)', boxShadow: '0 4px 12px rgba(100, 116, 166, 0.08)', width: 'fit-content' }}>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', height: '20px' }}>
+                    <div style={{ width: '6px', height: '6px', background: '#cbd5e1', borderRadius: '50%', animation: 'bounce 1s infinite' }} />
+                    <div style={{ width: '6px', height: '6px', background: '#cbd5e1', borderRadius: '50%', animation: 'bounce 1s infinite 0.2s' }} />
+                    <div style={{ width: '6px', height: '6px', background: '#cbd5e1', borderRadius: '50%', animation: 'bounce 1s infinite 0.4s' }} />
+                  </div>
+                </div>
+             </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
