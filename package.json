@@ -9,12 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/genai": "^1.48.0",
     "@imgly/background-removal": "^1.4.3",
     "@supabase/supabase-js": "^2.39.0",
     "lucide-react": "latest",
-    "openai": "^4.20.1",
     "next": "^16.2.1",
     "onnxruntime-web": "^1.24.3",
+    "openai": "^4.20.1",
     "pg": "^8.20.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",

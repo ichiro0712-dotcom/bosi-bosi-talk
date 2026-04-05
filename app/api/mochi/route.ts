@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import webPush from 'web-push';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -19,13 +19,13 @@ export async function POST(req: Request) {
   try {
     const { text, userId, userName } = await req.json();
 
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY is not set.");
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY is not set.");
       await insertMochiMessage("APIキーが未設定のため、お返事できませんでした🍡");
       return NextResponse.json({ success: true, fake: true });
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     // 1. システムプロンプトをDBから取得
     const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
@@ -38,36 +38,37 @@ export async function POST(req: Request) {
       .order('created_at', { ascending: false })
       .limit(20);
 
-    const apiMessages: any[] = [
-      { role: 'system', content: systemPrompt }
-    ];
+    const apiMessages: any[] = [];
 
     if (messages && messages.length > 0) {
       const sortedMessages = messages.reverse();
       for (const m of sortedMessages) {
-        const role = m.user_id === 'mochi' ? 'assistant' : 'user';
+        const role = m.user_id === 'mochi' ? 'model' : 'user';
         const speaker = m.user_id === 'user_a' ? 'ミルク' : m.user_id === 'user_b' ? 'メリー' : '誰か';
         const content = m.text || '(画像スタンプ)';
         
-        if (role === 'assistant') {
-          apiMessages.push({ role, content });
+        if (role === 'model') {
+          apiMessages.push({ role, parts: [{ text: content }] });
         } else {
-          apiMessages.push({ role, content: `${speaker}: ${content}` });
+          apiMessages.push({ role, parts: [{ text: `${speaker}: ${content}` }] });
         }
       }
     }
 
     // 最新のメッセージを末尾に追加
-    apiMessages.push({ role: 'user', content: `${userName}: ${text}` });
+    apiMessages.push({ role: 'user', parts: [{ text: `${userName}: ${text}` }] });
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: apiMessages,
-      temperature: 0.7,
-      max_tokens: 500
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: apiMessages,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.7,
+        maxOutputTokens: 500,
+      }
     });
 
-    const aiReply = completion.choices[0]?.message?.content?.trim();
+    const aiReply = response.text?.trim();
 
     if (aiReply) {
       const insertError = await insertMochiMessage(aiReply);

@@ -105,7 +105,7 @@ export default function ChatApp() {
             time: new Date(m.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
             timestamp: new Date(m.created_at).getTime(),
             dateStr: new Date(m.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
-            imageUrl: m.image_url, is_read: m.is_read, status: 'sent' as const, user_id: m.user_id
+            imageUrl: m.image_url, is_read: m.is_read, status: 'sent' as const, user_id: m.user_id, target_user: m.target_user
           }));
           setMessages(formatted);
           // 相手から来た未読メッセージを開いた瞬間に全て「既読」にするアップデート処理
@@ -133,7 +133,7 @@ export default function ChatApp() {
                 time: new Date(newMsg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
                 timestamp: new Date(newMsg.created_at).getTime(),
                 dateStr: new Date(newMsg.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
-                imageUrl: newMsg.image_url, is_read: newMsg.is_read, status: 'sent', user_id: newMsg.user_id
+                imageUrl: newMsg.image_url, is_read: newMsg.is_read, status: 'sent', user_id: newMsg.user_id, target_user: newMsg.target_user
               }];
             });
             // リアルタイムで受信したら、相手のメッセージのみ「既読」をつける
