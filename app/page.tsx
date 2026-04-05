@@ -258,10 +258,10 @@ export default function ChatApp() {
     }
   };
 
-  const sendStampTemplate = (name: string) => {
+  const sendStampTemplate = (filename: string) => {
     setShowStampPicker(false);
-    // 自身でDL・配置することを前提に、ローカルURLを参照
-    const localUrl = `/stamps/stamp_${name}.svg`;
+    // ローカルURLを参照
+    const localUrl = `/stamps/${filename}`;
     
     // 即座に送信中を表示
     const tempId = 'temp_' + Date.now();
@@ -281,13 +281,13 @@ export default function ChatApp() {
         <h1 style={{color: 'var(--text-main)', fontSize: '1.8rem', fontWeight: 800, textAlign:'center'}}>BOSHI×BOSHI Talk</h1>
         <p style={{color: 'var(--text-muted)', textAlign:'center', fontWeight:600}}>お使いになるプロフィールを<br/>選んでください</p>
         <div style={{display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center'}}>
-           <button onClick={()=>{localStorage.setItem('boshi_profile','user_a'); setMyProfile('user_a')}} style={{background:'rgba(255,255,255,0.7)', padding:'32px 40px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
-             <span style={{fontSize:'3.5rem'}}>🦊</span>
-             <span style={{fontSize:'1.1rem', fontWeight:700, color:'var(--text-main)'}}>キツネさん</span>
+           <button onClick={()=>{localStorage.setItem('boshi_profile','user_a'); setMyProfile('user_a')}} style={{background:'rgba(255,255,255,0.7)', padding:'24px 32px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
+             <img src="/stamps/stamp_custom_41.png" alt="ミルク" style={{width: '80px', height: '80px', objectFit: 'contain'}} />
+             <span style={{fontSize:'1.1rem', fontWeight:700, color:'var(--text-main)'}}>ミルク</span>
            </button>
-           <button onClick={()=>{localStorage.setItem('boshi_profile','user_b'); setMyProfile('user_b')}} style={{background:'rgba(255,255,255,0.7)', padding:'32px 40px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
-             <span style={{fontSize:'3.5rem'}}>🐰</span>
-             <span style={{fontSize:'1.1rem', fontWeight:700, color:'var(--text-main)'}}>ウサギさん</span>
+           <button onClick={()=>{localStorage.setItem('boshi_profile','user_b'); setMyProfile('user_b')}} style={{background:'rgba(255,255,255,0.7)', padding:'24px 32px', borderRadius:'24px', border:'1px solid var(--glass-border)', boxShadow:'var(--shadow-soft)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', transition:'0.2s'}}>
+             <img src="/stamps/stamp_custom_59.png" alt="ミルク" style={{width: '80px', height: '80px', objectFit: 'contain'}} />
+             <span style={{fontSize:'1.1rem', fontWeight:700, color:'var(--text-main)'}}>ミルク</span>
            </button>
         </div>
       </div>
@@ -403,13 +403,13 @@ export default function ChatApp() {
               border: '1px solid var(--glass-border)'
             }}>
               <div style={{display:'flex', justifyContent:'space-between', marginBottom:'16px', alignItems:'center'}}>
-                <h4 style={{margin:0, color:'var(--text-main)'}}>デフォルトスタンプを選ぶ</h4>
+                <h4 style={{margin:0, color:'var(--text-main)'}}>スタンプ</h4>
                 <button onClick={() => setShowStampPicker(false)} style={{background:'none', border:'none', fontSize:'1.5rem', cursor:'pointer', color:'var(--text-muted)'}}>×</button>
               </div>
-              <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:'10px', overflowY:'auto', maxHeight:'240px'}}>
-                {['ok','thanks','cheers','wow','sorry','yes','thinking','nod','roger','love'].map(name => (
-                  <div key={name} onClick={() => sendStampTemplate(name)} style={{aspectRatio:'1/1', background:'#f8fafc', borderRadius:'12px', overflow:'hidden', cursor:'pointer', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center'}}>
-                    <img src={`/stamps/stamp_${name}.svg`} alt={name} style={{width:'90%', height:'90%', objectFit:'contain'}} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.parentElement!.innerHTML = '<span style="font-size:0.7rem;color:#94a3b8">DL待機</span>'; }} />
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(64px, 1fr))', gap:'12px', overflowY:'auto', maxHeight:'360px', paddingBottom: '8px'}}>
+                {Array.from({length: 64}, (_, i) => `stamp_custom_${i + 1}.png`).map(filename => (
+                  <div key={filename} onClick={() => sendStampTemplate(filename)} style={{aspectRatio:'1/1', background:'#f8fafc', borderRadius:'12px', overflow:'hidden', cursor:'pointer', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                    <img src={`/stamps/${filename}`} alt="stamp" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', padding: '4px'}} onError={(e) => { e.currentTarget.style.display='none'; e.currentTarget.parentElement!.innerHTML = '<span style="font-size:0.7rem;color:#94a3b8">DL待機</span>'; }} />
                   </div>
                 ))}
               </div>
