@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import webPush from 'web-push';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-// Initialize Supabase
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Initialize Web Push (if possible)
 if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
   webPush.setVapidDetails(
     process.env.VAPID_SUBJECT || 'mailto:vibe@example.com',
@@ -18,65 +15,59 @@ if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
   );
 }
 
-// ユーザーが持っている「もち」の性格設定や文脈（システムプロンプト）。
-// この後提供されるドキュメントを反映予定。
-const SYSTEM_PROMPT = `あなたは「もち」という名前のサポートボットです。
-ユーザーである「ミルク」と「メリー」のチャット空間に同居しており、二人をサポートする存在です。
-過去の会話や設定文脈を参考に、キャラクターになりきって短く、親しみやすい言葉で返答してください。
-過度にAIっぽくならないよう、人間のサポーターのように振る舞ってください。`;
-
 export async function POST(req: Request) {
   try {
     const { text, userId, userName } = await req.json();
 
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn("GEMINI_API_KEY is not set.");
-      // 仮の返答を返す
-      await insertMochiMessage("APIキーが未設定のため、AIとしてお返事できませんでした🍡");
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("OPENAI_API_KEY is not set.");
+      await insertMochiMessage("APIキーが未設定のため、お返事できませんでした🍡");
       return NextResponse.json({ success: true, fake: true });
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // 直近20件のチャット履歴を取得して文脈として渡す
+    // 1. システムプロンプトをDBから取得
+    const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
+    const systemPrompt = settings?.mochi_prompt || `あなたは「もち」というサポーターボットです。丁寧語を使わずに親しみやすく話してください。`;
+
+    // 2. 過去のチャット履歴を20件取得
     const { data: messages } = await supabase
       .from('messages')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(20);
 
-    let historyText = "";
+    const apiMessages: any[] = [
+      { role: 'system', content: systemPrompt }
+    ];
+
     if (messages && messages.length > 0) {
       const sortedMessages = messages.reverse();
-      historyText = sortedMessages.map(m => {
-        const speaker = m.user_id === 'mochi' ? 'もち' : 
-                        m.user_id === 'user_a' ? 'ミルク' : 'メリー';
-        // 画像送信などの場合はテキストがないこともある
+      for (const m of sortedMessages) {
+        const role = m.user_id === 'mochi' ? 'assistant' : 'user';
+        const speaker = m.user_id === 'user_a' ? 'ミルク' : m.user_id === 'user_b' ? 'メリー' : '誰か';
         const content = m.text || '(画像スタンプ)';
-        return `${speaker}: ${content}`;
-      }).join("\n");
+        
+        if (role === 'assistant') {
+          apiMessages.push({ role, content });
+        } else {
+          apiMessages.push({ role, content: `${speaker}: ${content}` });
+        }
+      }
     }
 
-    const prompt = `
-【システム設定】
-${SYSTEM_PROMPT}
+    // 最新のメッセージを末尾に追加
+    apiMessages.push({ role: 'user', content: `${userName}: ${text}` });
 
-【最近の会話履歴】
-${historyText}
-
-【今回の発言】
-${userName}: ${text}
-
-もちとしての返答を生成してください（挨拶などは省き、続くメッセージとして送信する想定で書いてください）：
-`;
-
-    // モデル呼び出し（gemini-2.5-flashをデフォルトに使用）
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: apiMessages,
+      temperature: 0.7,
+      max_tokens: 500
     });
 
-    const aiReply = response.text;
+    const aiReply = completion.choices[0]?.message?.content?.trim();
 
     if (aiReply) {
       await insertMochiMessage(aiReply);
@@ -86,13 +77,12 @@ ${userName}: ${text}
 
   } catch (err: any) {
     console.error("Mochi AI Error:", err);
-    await insertMochiMessage("（考え中にお餅が詰まってしまいました…🍡エラーが発生しました）");
+    await insertMochiMessage("（考え中にお餅が詰まってしまいました…🍡通信状況やAPIキーを確認してください）");
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
 async function insertMochiMessage(text: string) {
-  // 1. DBに保存
   const { error } = await supabase.from('messages').insert([{
     text,
     user_id: 'mochi',
@@ -104,8 +94,6 @@ async function insertMochiMessage(text: string) {
     return;
   }
 
-  // 2. プッシュ通知の送信（ミルク・メリー双方へ）
-  //    ※送信者（もち）は除外設定不要なので全員に送る
   try {
     const { data: subs } = await supabase.from('subscriptions').select('*');
     if (subs && subs.length > 0) {
