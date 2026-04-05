@@ -326,10 +326,10 @@ export default function ChatApp() {
                 )}
                 <div style={{ alignSelf: msg.isMine ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '6px', maxWidth: '80%', marginTop: isGrouped ? '2px' : '12px' }}>
                   
-                  {msg.user_id === 'mochi' && !isGrouped && (
-                     <img src="/mochi.png" alt="mochi" style={{width: '36px', height: '36px', borderRadius: '50%', objectFit: 'contain', background: '#fff', border: '1px solid var(--glass-border)'}} />
+                  {!isGrouped && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) && (
+                     <img src={msg.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : msg.user_id === 'user_b' ? '/stamps/stamp_custom_8.png' : '/mochi.png'} alt={msg.user_id} style={{width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', background: '#fff', border: '1px solid var(--glass-border)'}} />
                   )}
-                  {msg.user_id === 'mochi' && isGrouped && <div style={{width: '36px'}} />}
+                  {isGrouped && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) && <div style={{width: '36px'}} />}
 
                   {(!msg.text && msg.imageUrl) ? (
                     <div>
@@ -337,7 +337,7 @@ export default function ChatApp() {
                     </div>
                   ) : (
                     <div style={{
-                      background: msg.isMine ? '#f0c8f7' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
+                      background: msg.user_id === 'mochi' ? '#e2e8f0' : msg.isMine ? '#f0c8f7' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
                       borderTopRightRadius: (msg.isMine && isGrouped) ? '4px' : '18px',
                       borderTopLeftRadius: (!msg.isMine && isGrouped) ? '4px' : '18px',
                       borderBottomRightRadius: (msg.isMine && !isNextGrouped) ? '4px' : '18px',
