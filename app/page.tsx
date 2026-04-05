@@ -134,15 +134,27 @@ export default function Home() {
     const tempUrl = URL.createObjectURL(file);
     setSettings(prev => prev ? { ...prev, top_image_url: tempUrl } : { anniversary_date: null, top_image_url: tempUrl });
 
-    const filePath = `top_images/${Date.now()}_${file.name}`;
-    const { error } = await supabase.storage.from('chat_media').upload(filePath, file);
+    const ext = file.name.split('.').pop() || 'jpg';
+    const filePath = `top_images/${Date.now()}_bg.${ext}`;
+    const { error } = await supabase.storage.from('chat_media').upload(filePath, file, { cacheControl: '3600', upsert: true });
+    
     if (!error) {
        const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
        let query = supabase.from('couple_settings');
+       
+       let dbErr = null;
        if (settings && (settings as any).id) {
-         await query.update({ top_image_url: data.publicUrl }).eq('id', (settings as any).id);
+         const { error: updateErr } = await query.update({ top_image_url: data.publicUrl }).eq('id', (settings as any).id);
+         dbErr = updateErr;
        } else {
-         await query.upsert({ top_image_url: data.publicUrl });
+         const { error: insertErr } = await query.upsert({ top_image_url: data.publicUrl });
+         dbErr = insertErr;
+       }
+       
+       if (dbErr) {
+         alert("データベース保存エラー: " + dbErr.message);
+         console.error(dbErr);
+         return;
        }
        
        const profile = localStorage.getItem('boshi_profile');
@@ -151,7 +163,8 @@ export default function Home() {
        
        fetchSettings();
     } else {
-       alert("画像のアップロードに失敗しました");
+       alert("画像のアップロードエラー: " + error.message);
+       console.error(error);
        fetchSettings(); // revert
     }
   };
