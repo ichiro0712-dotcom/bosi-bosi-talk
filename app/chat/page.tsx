@@ -94,10 +94,11 @@ export default function ChatApp() {
     // 過去ログ取得とDB監視
     const initDB = async () => {
       try {
-        const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(50);
+        const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(50);
         if (data) {
           setIsDBReady(true);
-          const formatted = data.map(m => ({
+          const sortedData = data.reverse();
+          const formatted = sortedData.map(m => ({
             id: m.id, text: m.text, isMine: m.user_id === myProfile,
             time: new Date(m.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
             timestamp: new Date(m.created_at).getTime(),
@@ -105,9 +106,8 @@ export default function ChatApp() {
             imageUrl: m.image_url, is_read: m.is_read, status: 'sent' as const, user_id: m.user_id
           }));
           setMessages(formatted);
-          
           // 相手から来た未読メッセージを開いた瞬間に全て「既読」にするアップデート処理
-          const unreadFromOther = data.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
+          const unreadFromOther = sortedData.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
           if (unreadFromOther.length > 0) {
             supabase.from('messages').update({ is_read: true }).in('id', unreadFromOther).then();
           }
@@ -337,7 +337,7 @@ export default function ChatApp() {
                     </div>
                   ) : (
                     <div style={{
-                      background: msg.isMine ? 'var(--primary)' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
+                      background: msg.isMine ? '#f0c8f7' : 'rgba(255, 255, 255, 0.95)', padding: '10px 14px', borderRadius: '18px',
                       borderTopRightRadius: (msg.isMine && isGrouped) ? '4px' : '18px',
                       borderTopLeftRadius: (!msg.isMine && isGrouped) ? '4px' : '18px',
                       borderBottomRightRadius: (msg.isMine && !isNextGrouped) ? '4px' : '18px',
