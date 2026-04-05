@@ -341,7 +341,7 @@ export default function ChatApp() {
                 <div style={{ alignSelf: msg.isMine ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '6px', maxWidth: '80%', marginTop: isGrouped ? '2px' : '12px' }}>
                   
                   {!isGrouped && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) && (
-                     <img src={msg.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : msg.user_id === 'user_b' ? '/stamps/stamp_custom_8.png' : '/mochi.png'} alt={msg.user_id} style={{width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', background: '#fff', border: '1px solid var(--glass-border)'}} />
+                     <img src={msg.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : msg.user_id === 'user_b' ? '/stamps/stamp_custom_8.png' : '/mochi.png'} alt={msg.user_id} style={{width: '36px', height: '36px', borderRadius: '50%', objectFit: 'contain', padding: '4px', boxSizing: 'border-box', background: '#fff', border: '1px solid var(--glass-border)'}} />
                   )}
                   {isGrouped && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) && <div style={{width: '36px'}} />}
 
