@@ -203,16 +203,18 @@ button {
   .mobile-bottom-nav {
     display: flex;
     justify-content: space-around;
-    height: 70px;
+    height: calc(70px + env(safe-area-inset-bottom)); /* iOS等セーフエリア対応 */
+    padding-bottom: env(safe-area-inset-bottom); /* iOS等セーフエリア対応 */
     background: var(--primary);
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(30px);
     border-top: none;
     position: fixed;
-    bottom: 0;
+    bottom: -1px; /* サブピクセルレンダリングによる下部の隙間を物理的に塞ぐ */
     left: 0;
     width: 100%;
     z-index: 100;
-    box-shadow: 0 -4px 20px rgba(100, 116, 166, 0.08); /* 上向きの柔らかい影 */
+    box-shadow: 0 -8px 24px rgba(147, 112, 219, 0.15); /* より自然な同系色のシャドウへ改善し、白い浮きをなくす */
+    transform: translateZ(0); /* ハードウェアアクセラレーション有効化（境界のチラつき防止） */
   }
 }
