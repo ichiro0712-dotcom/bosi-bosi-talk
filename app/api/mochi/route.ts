@@ -243,14 +243,39 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     // 全メモリ層を並行取得
-    const [settings, layer1, layer2, layer3] = await Promise.all([
-      supabase.from('couple_settings').select('mochi_prompt').limit(1).single(),
+    const [settings, layer1, layer2, layer3, remindersRes] = await Promise.all([
+      supabase.from('couple_settings').select('*').limit(1).single(),
       getLayer1(),
       getLayer2(),
-      getLayer3()
+      getLayer3(),
+      supabase.from('scheduled_reminders').select('*').eq('is_active', true).order('next_run_at', { ascending: true })
     ]);
 
     const characterPrompt = settings.data?.mochi_prompt || 'あなたは「もち」というサポーターボットです。丁寧語を使わずに親しみやすく話してください。';
+
+    // 記念日情報の組み立て
+    let anniversaryInfo = '';
+    if (settings.data?.anniversary_date) {
+      anniversaryInfo += `メインの記念日: ${settings.data.anniversary_date}\n`;
+    }
+    if (settings.data?.other_anniversaries && Array.isArray(settings.data.other_anniversaries)) {
+      for (const a of settings.data.other_anniversaries) {
+        anniversaryInfo += `${a.title}: ${a.date}\n`;
+      }
+    }
+    if (!anniversaryInfo) anniversaryInfo = '（まだ登録されていません）';
+
+    // リマインダー情報の組み立て
+    let reminderInfo = '';
+    if (remindersRes.data && remindersRes.data.length > 0) {
+      for (const r of remindersRes.data) {
+        const typeLabel = r.schedule_type === 'once' ? '1回' : r.schedule_type === 'daily' ? '毎日' : r.schedule_type === 'weekly' ? '毎週' : '毎月';
+        const nextRun = r.next_run_at ? new Date(r.next_run_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '未定';
+        reminderInfo += `- [${typeLabel}] ${r.message}（次回: ${nextRun}）\n`;
+      }
+    } else {
+      reminderInfo = '（登録されているリマインダーはありません）';
+    }
 
     // System Prompt組み立て
     const systemPrompt = [
@@ -261,6 +286,12 @@ export async function POST(req: Request) {
       '',
       '=== ミルクとメリーについて知っていること ===',
       layer1,
+      '',
+      '=== 登録されている記念日 ===',
+      anniversaryInfo,
+      '',
+      '=== 有効なリマインダー ===',
+      reminderInfo,
       '',
       '=== 過去の会話のまとめ ===',
       layer2,
