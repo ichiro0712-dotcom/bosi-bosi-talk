@@ -139,9 +139,11 @@ export default function ChatApp() {
           }
           setMessages(formatted);
 
-          // 既読処理
-          const unread = sorted.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
-          if (unread.length > 0) supabase.from('messages').update({ is_read: true }).in('id', unread).then();
+          // 既読処理（画面がアクティブな時のみ）
+          if (document.visibilityState === 'visible') {
+            const unread = sorted.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
+            if (unread.length > 0) supabase.from('messages').update({ is_read: true }).in('id', unread).then();
+          }
         }
       } catch { setIsDBReady(false); }
     };
@@ -175,7 +177,8 @@ export default function ChatApp() {
               const withoutTemp = prev.filter(m => !(m.id.toString().startsWith('temp_') && m.text === newMsg.text && (m.imageUrl || null) === (newMsg.image_url || null) && m.isMine === (newMsg.user_id === myProfile)));
               return [...withoutTemp, msg];
             });
-            if (newMsg.user_id !== myProfile && !newMsg.is_read) {
+            // 画面がアクティブな時のみ既読にする
+            if (newMsg.user_id !== myProfile && !newMsg.is_read && document.visibilityState === 'visible') {
               setTimeout(() => supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id).then(), 300);
             }
           } else if (payload.eventType === 'UPDATE') {
@@ -196,6 +199,21 @@ export default function ChatApp() {
       return () => { supabase.removeChannel(channel); };
     }
   }, [myProfile, formatMsg]);
+
+  // 画面が見えるようになったら未読を既読にする
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible' && myProfile) {
+        supabase.from('messages').select('id').eq('is_read', false).neq('user_id', myProfile).then(({ data }) => {
+          if (data && data.length > 0) {
+            supabase.from('messages').update({ is_read: true }).in('id', data.map(m => m.id)).then();
+          }
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [myProfile]);
 
   // ===== ジャンプ & ハイライト =====
   const jumpToMessage = (msgId: number) => {
@@ -418,9 +436,13 @@ export default function ChatApp() {
             const prevMsg = index > 0 ? visibleMessages[index - 1] : null;
             const nextMsg = index < visibleMessages.length - 1 ? visibleMessages[index + 1] : null;
             const showDate = !prevMsg || prevMsg.dateStr !== msg.dateStr;
-            const isGrouped = prevMsg && prevMsg.isMine === msg.isMine && ((msg.timestamp || 0) - (prevMsg.timestamp || 0) < 60000) && !showDate;
-            const isNextGrouped = nextMsg && nextMsg.isMine === msg.isMine && ((nextMsg.timestamp || 0) - (msg.timestamp || 0) < 60000) && nextMsg.dateStr === msg.dateStr;
+            // クラスタリング: 同じ人が連続 + 60秒以内 + 日付またぎなし + 間に別人なし
+            const isGrouped = prevMsg && prevMsg.user_id === msg.user_id && ((msg.timestamp || 0) - (prevMsg.timestamp || 0) < 60000) && !showDate;
+            const isNextGrouped = nextMsg && nextMsg.user_id === msg.user_id && ((nextMsg.timestamp || 0) - (msg.timestamp || 0) < 60000) && nextMsg.dateStr === msg.dateStr;
             const isHighlighted = highlightId === msg.id;
+            const isFirst = !isGrouped; // クラスタの先頭
+            const avatarSrc = msg.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : msg.user_id === 'user_b' ? '/stamps/stamp_custom_8.png' : '/mochi.png';
+            const bubbleBg = (msg.user_id === 'mochi' || msg.target_user === 'mochi') ? '#e2e8f0' : msg.isMine ? '#f0c8f7' : 'rgba(255,255,255,0.95)';
 
             return (
               <React.Fragment key={msg.id}>
@@ -434,61 +456,69 @@ export default function ChatApp() {
                   onTouchStart={e => handleLongPressStart(msg, e)} onTouchEnd={handleLongPressEnd} onTouchMove={handleLongPressEnd}
                   onContextMenu={e => { e.preventDefault(); if (!msg.is_deleted && msg.status !== 'sending') setContextMenu({ msg, x: e.clientX, y: e.clientY }); }}
                   style={{
-                    alignSelf: msg.isMine ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row',
-                    alignItems: 'flex-end', gap: '6px', maxWidth: '80%', marginTop: isGrouped ? '2px' : '12px', userSelect: 'text',
+                    alignSelf: msg.isMine ? 'flex-end' : 'flex-start',
+                    display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row',
+                    alignItems: 'flex-start', gap: '6px', maxWidth: '78%',
+                    marginTop: isGrouped ? '2px' : '12px', userSelect: 'text',
                     transition: 'background 0.3s', borderRadius: '12px', padding: '2px',
                     background: isHighlighted ? 'rgba(147,112,219,0.15)' : 'transparent',
                   }}
                 >
-                  {/* アバター */}
-                  {!isGrouped && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) && (
-                    <img src={msg.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : msg.user_id === 'user_b' ? '/stamps/stamp_custom_8.png' : '/mochi.png'} alt="" style={{width:'36px', height:'36px', borderRadius:'50%', objectFit:'contain', padding:'4px', boxSizing:'border-box', background:'#fff', border:'1px solid var(--glass-border)'}} />
-                  )}
-                  {isGrouped && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) && <div style={{width:'36px'}} />}
-
-                  {/* 吹き出し */}
-                  {msg.is_deleted ? (
-                    <div style={{ padding: '8px 14px', borderRadius: '18px', background: 'rgba(0,0,0,0.02)', border: '1px dashed #e2e8f0' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>メッセージの送信を取り消しました</span>
-                    </div>
-                  ) : (!msg.text && msg.imageUrl) ? (
-                    <img src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && setPreviewImage(msg.imageUrl!)} style={{ width:'160px', height:'160px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
+                  {/* アバター: 先頭のみ表示、2通目以降はスペーサー */}
+                  {isFirst && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) ? (
+                    <img src={avatarSrc} alt="" style={{width:'34px', height:'34px', borderRadius:'50%', objectFit:'contain', padding:'3px', boxSizing:'border-box', background:'#fff', border:'1px solid var(--glass-border)', flexShrink: 0, marginTop: '2px'}} />
                   ) : (
-                    <div style={{
-                      background: (msg.user_id === 'mochi' || msg.target_user === 'mochi') ? '#e2e8f0' : msg.isMine ? '#f0c8f7' : 'rgba(255,255,255,0.95)',
-                      padding: '10px 14px', borderRadius: '18px',
-                      borderTopRightRadius: (msg.isMine && isGrouped) ? '4px' : '18px',
-                      borderTopLeftRadius: (!msg.isMine && isGrouped) ? '4px' : '18px',
-                      borderBottomRightRadius: (msg.isMine && !isNextGrouped) ? '4px' : '18px',
-                      borderBottomLeftRadius: (!msg.isMine && !isNextGrouped) ? '4px' : '18px',
-                      color: 'var(--text-main)', boxShadow: '0 4px 12px rgba(100,116,166,0.08)', width: 'fit-content'
-                    }}>
-                      {/* リプライプレビュー（タップでジャンプ） */}
-                      {(msg.reply_text || msg.reply_to) && (
-                        <div onClick={e => { e.stopPropagation(); if (typeof msg.reply_to === 'number') jumpToMessage(msg.reply_to); }}
-                          style={{ borderLeft: '3px solid #9370db', paddingLeft: '8px', marginBottom: '6px', fontSize: '0.72rem', color: '#64748b', cursor: typeof msg.reply_to === 'number' ? 'pointer' : 'default' }}>
-                          <div style={{ fontWeight: 700, marginBottom: '1px', color: '#9370db' }}>{msg.reply_user || ''}</div>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{msg.reply_text || ''}</div>
-                        </div>
-                      )}
-                      {msg.text && renderTextWithLinks(msg.text)}
-                      {msg.imageUrl && <img src={msg.imageUrl} alt="" onClick={() => setPreviewImage(msg.imageUrl!)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
-                    </div>
+                    <div style={{width:'34px', flexShrink: 0}} />
                   )}
 
-                  {/* ステータス: 既読 / 時刻 / エラー */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start', justifyContent: 'flex-end', paddingBottom: '2px' }}>
-                    {msg.status === 'error' && msg.isMine && (
-                      <div style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
-                        <button onClick={() => handleRetry(msg)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: 0, display: 'flex' }} title="再送"><RotateCcw size={12} /></button>
-                        <button onClick={() => handleDeleteFailed(msg)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex' }} title="削除"><Trash2 size={12} /></button>
+                  {/* 吹き出し + ステータス列 */}
+                  <div style={{ display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: '4px', minWidth: 0 }}>
+                    {/* 吹き出し本体 */}
+                    {msg.is_deleted ? (
+                      <div style={{ padding: '8px 14px', borderRadius: '16px', background: 'rgba(0,0,0,0.02)', border: '1px dashed #e2e8f0' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>メッセージの送信を取り消しました</span>
+                      </div>
+                    ) : (!msg.text && msg.imageUrl) ? (
+                      <img src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && setPreviewImage(msg.imageUrl!)} style={{ width:'150px', height:'150px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
+                    ) : (
+                      <div style={{
+                        background: bubbleBg,
+                        padding: '10px 14px',
+                        borderRadius: '18px',
+                        // しっぽ: 先頭メッセージのみ角を尖らせる
+                        borderTopRightRadius: (msg.isMine && isFirst) ? '4px' : '18px',
+                        borderTopLeftRadius: (!msg.isMine && isFirst) ? '4px' : '18px',
+                        // 連続時は丸く
+                        ...(isGrouped ? { borderTopRightRadius: msg.isMine ? '4px' : '18px', borderTopLeftRadius: msg.isMine ? '18px' : '4px' } : {}),
+                        color: 'var(--text-main)', boxShadow: '0 2px 8px rgba(100,116,166,0.06)', width: 'fit-content', maxWidth: '100%'
+                      }}>
+                        {/* リプライプレビュー */}
+                        {(msg.reply_text || msg.reply_to) && (
+                          <div onClick={e => { e.stopPropagation(); if (typeof msg.reply_to === 'number') jumpToMessage(msg.reply_to); }}
+                            style={{ borderLeft: '3px solid #9370db', paddingLeft: '8px', marginBottom: '6px', fontSize: '0.72rem', color: '#64748b', cursor: typeof msg.reply_to === 'number' ? 'pointer' : 'default' }}>
+                            <div style={{ fontWeight: 700, marginBottom: '1px', color: '#9370db' }}>{msg.reply_user || ''}</div>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{msg.reply_text || ''}</div>
+                          </div>
+                        )}
+                        {msg.text && renderTextWithLinks(msg.text)}
+                        {msg.imageUrl && <img src={msg.imageUrl} alt="" onClick={() => setPreviewImage(msg.imageUrl!)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
                       </div>
                     )}
-                    {msg.status === 'error' && <AlertCircle size={14} color="#dc2626" />}
-                    {msg.isMine && !msg.is_deleted && msg.is_read && msg.status === 'sent' && <span style={{ fontSize: '0.56rem', color: '#9370db', lineHeight: '1', marginBottom: '1px', fontWeight: 600 }}>既読</span>}
-                    <span style={{ fontSize: '0.6rem', color: msg.status === 'error' ? '#dc2626' : 'var(--text-muted)', lineHeight: '1' }}>
-                      {msg.status === 'sending' ? '↗' : msg.status === 'error' ? '!' : msg.time}
-                    </span>
+
+                    {/* ステータス列: 既読 + 時刻（吹き出しの反対側下部） */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start', justifyContent: 'flex-end', paddingBottom: '2px', flexShrink: 0 }}>
+                      {msg.status === 'error' && msg.isMine && (
+                        <div style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
+                          <button onClick={() => handleRetry(msg)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: 0, display: 'flex' }} title="再送"><RotateCcw size={12} /></button>
+                          <button onClick={() => handleDeleteFailed(msg)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex' }} title="削除"><Trash2 size={12} /></button>
+                        </div>
+                      )}
+                      {msg.status === 'error' && <AlertCircle size={14} color="#dc2626" />}
+                      {msg.isMine && !msg.is_deleted && msg.is_read && msg.status === 'sent' && <span style={{ fontSize: '0.55rem', color: '#9370db', lineHeight: '1', marginBottom: '1px', fontWeight: 600 }}>既読</span>}
+                      <span style={{ fontSize: '0.58rem', color: msg.status === 'error' ? '#dc2626' : '#94a3b8', lineHeight: '1' }}>
+                        {msg.status === 'sending' ? '↗' : msg.status === 'error' ? '!' : msg.time}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </React.Fragment>
