@@ -437,9 +437,9 @@ export default function TodosPage() {
   if (!myProfile) return null;
 
   const tabs = [
-    { id: 'tasks' as const, label: 'タスク', count: activeTasks.length },
+    { id: 'tasks' as const, label: 'Task', count: activeTasks.length },
     { id: 'reminders' as const, label: 'リマインダー', count: reminders.filter(r => r.is_active).length },
-    { id: 'done' as const, label: '完了', count: doneTasks.length },
+    { id: 'done' as const, label: '完了Task', count: doneTasks.length },
   ];
 
   return (
@@ -449,7 +449,7 @@ export default function TodosPage() {
         <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>TODO / リマインダー</h1>
         <button onClick={() => { tab === 'reminders' ? setShowReminderAdd(true) : (() => { setShowAdd(true); setAddParent(null); })(); }}
           style={{ background: '#9370db', color: 'white', padding: '7px 14px', borderRadius: '10px', fontWeight: 600, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Plus size={15} /> {tab === 'reminders' ? 'リマインダー' : 'タスク'}
+          <Plus size={15} /> {tab === 'reminders' ? 'リマインダー' : 'Task'}
         </button>
       </div>
 
