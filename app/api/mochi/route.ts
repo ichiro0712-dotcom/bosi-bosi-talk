@@ -71,6 +71,67 @@ const mochiTools: FunctionDeclaration[] = [
       type: Type.OBJECT,
       properties: {},
     }
+  },
+  {
+    name: "update_todo_status",
+    description: "タスクのステータスを変更する。「○○終わった」「○○完了」「○○が遅れてる」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title_keyword: { type: Type.STRING, description: "タスクを特定するためのキーワード（タイトルの一部でOK）" },
+        status: { type: Type.STRING, enum: ["not_started", "on_track", "trouble", "delayed", "blocked", "done"], description: "まだ=not_started, 順調=on_track, トラブル=trouble, 遅れてる=delayed, 止まってる=blocked, 完了=done" }
+      },
+      required: ["title_keyword", "status"]
+    }
+  },
+  {
+    name: "delete_todo",
+    description: "タスクを削除する。「○○は要らなくなった」「○○を消して」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title_keyword: { type: Type.STRING, description: "タスクを特定するためのキーワード（タイトルの一部でOK）" }
+      },
+      required: ["title_keyword"]
+    }
+  },
+  {
+    name: "add_reminder",
+    description: "リマインダーを追加する。「毎朝○時にリマインドして」「○日に通知して」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        message: { type: Type.STRING, description: "リマインダーのメッセージ" },
+        schedule_type: { type: Type.STRING, enum: ["once", "daily", "weekly"], description: "once=1回, daily=毎日, weekly=毎週" },
+        time: { type: Type.STRING, description: "時間（HH:MM形式、例: 09:00）" },
+        date: { type: Type.STRING, description: "onceの場合の日付（YYYY-MM-DD形式）。daily/weeklyなら空文字" },
+        day_of_week: { type: Type.STRING, description: "weeklyの場合の曜日番号（1=月〜7=日）。weekly以外なら空文字" }
+      },
+      required: ["message", "schedule_type", "time"]
+    }
+  },
+  {
+    name: "toggle_reminder",
+    description: "リマインダーのON/OFFを切り替える。「○○のリマインダーを止めて」「○○を再開して」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        message_keyword: { type: Type.STRING, description: "リマインダーを特定するためのキーワード（メッセージの一部でOK）" },
+        active: { type: Type.BOOLEAN, description: "ONにする=true, OFFにする=false" }
+      },
+      required: ["message_keyword", "active"]
+    }
+  },
+  {
+    name: "delete_reminder",
+    description: "リマインダーを削除する。「○○のリマインダーを消して」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        message_keyword: { type: Type.STRING, description: "リマインダーを特定するためのキーワード（メッセージの一部でOK）" }
+      },
+      required: ["message_keyword"]
+    }
   }
 ];
 
@@ -198,8 +259,68 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
       }]);
 
     } else if (name === 'list_todos') {
-      // list_todosは情報取得のみ、executeFunctionCallの戻り値として使う
-      // （実際のレスポンスはシステムプロンプトに含まれたTODO情報で対応）
+      // システムプロンプトに含まれたTODO情報で対応
+
+    } else if (name === 'update_todo_status') {
+      const { data: todos } = await supabase.from('todos').select('id, title').neq('status', 'done');
+      const match = todos?.find(t => t.title.includes(args.title_keyword));
+      if (match) {
+        await supabase.from('todos').update({ status: args.status, updated_at: new Date().toISOString() }).eq('id', match.id);
+        await supabase.from('mochi_memory_log').insert([{ action: 'update_todo_status', detail: { title: match.title, status: args.status } }]);
+      }
+
+    } else if (name === 'delete_todo') {
+      const { data: todos } = await supabase.from('todos').select('id, title');
+      const match = todos?.find(t => t.title.includes(args.title_keyword));
+      if (match) {
+        await supabase.from('todos').delete().eq('id', match.id);
+        await supabase.from('mochi_memory_log').insert([{ action: 'delete_todo', detail: { title: match.title } }]);
+      }
+
+    } else if (name === 'add_reminder') {
+      const [h, m] = (args.time || '09:00').split(':').map(Number);
+      let nextRun = new Date();
+
+      if (args.schedule_type === 'once' && args.date) {
+        nextRun = new Date(`${args.date}T${args.time}:00`);
+      } else {
+        nextRun.setHours(h, m, 0, 0);
+        if (nextRun <= new Date()) nextRun.setDate(nextRun.getDate() + 1);
+
+        if (args.schedule_type === 'weekly' && args.day_of_week) {
+          const jsDay = Number(args.day_of_week) === 7 ? 0 : Number(args.day_of_week);
+          while (nextRun.getDay() !== jsDay) nextRun.setDate(nextRun.getDate() + 1);
+        }
+      }
+
+      const detail: any = { time: args.time };
+      if (args.schedule_type === 'weekly' && args.day_of_week) detail.dayOfWeek = Number(args.day_of_week);
+
+      await supabase.from('scheduled_reminders').insert([{
+        message: args.message,
+        schedule_type: args.schedule_type,
+        schedule_detail: detail,
+        next_run_at: nextRun.toISOString(),
+        is_active: true,
+        created_by: 'mochi'
+      }]);
+      await supabase.from('mochi_memory_log').insert([{ action: 'add_reminder', detail: { message: args.message, type: args.schedule_type } }]);
+
+    } else if (name === 'toggle_reminder') {
+      const { data: reminders } = await supabase.from('scheduled_reminders').select('id, message');
+      const match = reminders?.find(r => r.message.includes(args.message_keyword));
+      if (match) {
+        await supabase.from('scheduled_reminders').update({ is_active: args.active }).eq('id', match.id);
+        await supabase.from('mochi_memory_log').insert([{ action: 'toggle_reminder', detail: { message: match.message, active: args.active } }]);
+      }
+
+    } else if (name === 'delete_reminder') {
+      const { data: reminders } = await supabase.from('scheduled_reminders').select('id, message');
+      const match = reminders?.find(r => r.message.includes(args.message_keyword));
+      if (match) {
+        await supabase.from('scheduled_reminders').delete().eq('id', match.id);
+        await supabase.from('mochi_memory_log').insert([{ action: 'delete_reminder', detail: { message: match.message } }]);
+      }
     }
   } catch (err) {
     console.error(`Function call ${name} failed:`, err);
@@ -347,11 +468,17 @@ export async function POST(req: Request) {
       currentScreen ? `[システム情報: 現在${userName}は「${currentScreen}」画面を開いています]` : '',
       '',
       '=== 重要なルール ===',
-      '- 新しい事実を知ったら update_user_profile ツールで記憶してね。すでに知っていることは記憶しなくていい。',
-      '- 2人の雰囲気が変わったと感じたら update_relationship_vibe ツールで更新してね。普段通りなら不要。',
-      '- 「○○やらなきゃ」「○○を予定に入れて」と言われたら add_todo ツールでTODOに追加してね。追加したことは伝えてOK。',
-      '- 「やること教えて」「タスク何ある？」と聞かれたら、上のTODOリスト情報をもとに教えてね。',
-      '- ツールを使ったこと自体（ツール名やDB操作の詳細）はユーザーに言わないでね。自然に会話して。',
+      '- 新しい事実を知ったら update_user_profile で記憶。すでに知っていることは不要。',
+      '- 2人の雰囲気が変わったら update_relationship_vibe で更新。普段通りなら不要。',
+      '- 「○○やらなきゃ」→ add_todo でTODOに追加。追加したことは伝えてOK。',
+      '- 「○○終わった」「○○完了」→ update_todo_status で status を done に。',
+      '- 「○○が遅れてる」→ update_todo_status で status を delayed に。',
+      '- 「○○を消して」「○○いらない」→ delete_todo でタスク削除。',
+      '- 「毎朝○時にリマインドして」→ add_reminder で追加。',
+      '- 「○○のリマインダー止めて」→ toggle_reminder で OFF。',
+      '- 「○○のリマインダー消して」→ delete_reminder で削除。',
+      '- 「やること教えて」→ 上のTODOリスト・リマインダー情報をもとに教える。',
+      '- ツール名やDB操作の詳細はユーザーに言わないでね。自然に「やっておいたよ！」と伝えて。',
     ].join('\n');
 
     // 会話履歴をGemini形式に変換
