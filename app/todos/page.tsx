@@ -366,10 +366,10 @@ export default function TodosPage() {
         </div>
 
         {/* Children */}
-        {!isChild && isOpen && kids.map(c => <TaskCard key={c.id} todo={c} isChild />)}
+        {!isChild && isOpen && kids.map(c => <React.Fragment key={c.id}>{TaskCard({ todo: c, isChild: true })}</React.Fragment>)}
         {!isChild && isOpen && addParent === todo.id && showAdd && (
           <div style={{ marginLeft: '20px', padding: '10px 16px', borderLeft: '3px solid #e2e8f0', marginBottom: '6px' }}>
-            <AddForm parentId={todo.id} />
+            {AddForm({ parentId: todo.id })}
           </div>
         )}
       </div>
@@ -476,7 +476,7 @@ export default function TodosPage() {
           <>
             {showAdd && addParent === null && (
               <div style={{ background: 'rgba(255,255,255,0.9)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)', marginBottom: '10px' }}>
-                <AddForm />
+                {AddForm({})}
               </div>
             )}
             {activeTasks.length === 0 && !showAdd ? (
@@ -484,7 +484,7 @@ export default function TodosPage() {
                 <p style={{ fontSize: '0.95rem', marginBottom: '6px' }}>タスクがありません</p>
                 <p style={{ fontSize: '0.78rem' }}>右上の「＋タスク」から追加</p>
               </div>
-            ) : activeTasks.map(t => <TaskCard key={t.id} todo={t} />)}
+            ) : activeTasks.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)}
           </>
         )}
 
@@ -571,7 +571,7 @@ export default function TodosPage() {
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
               <p style={{ fontSize: '0.95rem' }}>完了したタスクはありません</p>
             </div>
-          ) : doneTasks.map(t => <TaskCard key={t.id} todo={t} />)
+          ) : doneTasks.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)
         )}
       </div>
     </div>
