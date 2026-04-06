@@ -253,7 +253,7 @@ async function getLayer3(): Promise<any[]> {
 
 // ===== Function Call実行 =====
 
-async function executeFunctionCall(name: string, args: any): Promise<void> {
+async function executeFunctionCall(name: string, args: any): Promise<string | null> {
   try {
     if (name === 'update_user_profile') {
       const category = args.category || 'other';
@@ -281,6 +281,7 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         action: 'update_user_profile',
         detail: { user_id: args.user_id, category, fact: args.fact }
       }]);
+      return null; // プロフィール更新は黙って行う
 
     } else if (name === 'update_relationship_vibe') {
       await supabase
@@ -296,6 +297,7 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         action: 'update_relationship_vibe',
         detail: { vibe: args.vibe, reason: args.reason }
       }]);
+      return null; // Vibe更新は黙って行う
 
     } else if (name === 'add_todo') {
       await supabase.from('todos').insert([{
@@ -308,16 +310,20 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         action: 'add_todo',
         detail: { title: args.title, assignee: args.assignee, due_date: args.due_date }
       }]);
+      const assigneeLabel = args.assignee === 'user_a' ? 'ミルク' : args.assignee === 'user_b' ? 'メリー' : '2人';
+      return `📝 TODOに追加したもち！\n・${args.title}　担当: ${assigneeLabel}${args.due_date ? '　期限: ' + args.due_date : ''}`;
 
     } else if (name === 'list_todos') {
       // システムプロンプトに含まれたTODO情報で対応
 
     } else if (name === 'update_todo_status') {
+      const statusLabels: Record<string, string> = { not_started: 'まだ', on_track: '順調', trouble: 'トラブル', delayed: '遅れてる', blocked: '止まってる', done: '完了' };
       const { data: todos } = await supabase.from('todos').select('id, title').neq('status', 'done');
       const match = todos?.find(t => t.title.includes(args.title_keyword));
       if (match) {
         await supabase.from('todos').update({ status: args.status, updated_at: new Date().toISOString() }).eq('id', match.id);
         await supabase.from('mochi_memory_log').insert([{ action: 'update_todo_status', detail: { title: match.title, status: args.status } }]);
+        return `✏️ TODOを更新したもち！\n・${match.title} → ${statusLabels[args.status] || args.status}`;
       }
 
     } else if (name === 'delete_todo') {
@@ -326,6 +332,7 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
       if (match) {
         await supabase.from('todos').delete().eq('id', match.id);
         await supabase.from('mochi_memory_log').insert([{ action: 'delete_todo', detail: { title: match.title } }]);
+        return `🗑️ TODOから削除したもち！\n・${match.title}`;
       }
 
     } else if (name === 'add_reminder') {
@@ -356,6 +363,8 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         created_by: 'mochi'
       }]);
       await supabase.from('mochi_memory_log').insert([{ action: 'add_reminder', detail: { message: args.message, type: args.schedule_type } }]);
+      const schedLabel = args.schedule_type === 'once' ? '1回' : args.schedule_type === 'daily' ? '毎日' : args.schedule_type === 'weekly' ? '毎週' : args.schedule_type;
+      return `⏰ リマインダーを追加したもち！\n・${args.message}（${schedLabel} ${args.time}）`;
 
     } else if (name === 'toggle_reminder') {
       const { data: reminders } = await supabase.from('scheduled_reminders').select('id, message');
@@ -363,6 +372,7 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
       if (match) {
         await supabase.from('scheduled_reminders').update({ is_active: args.active }).eq('id', match.id);
         await supabase.from('mochi_memory_log').insert([{ action: 'toggle_reminder', detail: { message: match.message, active: args.active } }]);
+        return args.active ? `🔔 リマインダーを再開したもち！\n・${match.message}` : `🔕 リマインダーを停止したもち！\n・${match.message}`;
       }
 
     } else if (name === 'delete_reminder') {
@@ -371,10 +381,11 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
       if (match) {
         await supabase.from('scheduled_reminders').delete().eq('id', match.id);
         await supabase.from('mochi_memory_log').insert([{ action: 'delete_reminder', detail: { message: match.message } }]);
+        return `🗑️ リマインダーを削除したもち！\n・${match.message}`;
       }
 
     } else if (name === 'list_memos') {
-      // システムプロンプトにメモ情報を含めるので、ここでは追加処理なし
+      return null; // LLMの返答で対応
 
     } else if (name === 'create_memo') {
       await supabase.from('memos').insert([{
@@ -383,6 +394,7 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         updated_at: new Date().toISOString()
       }]);
       await supabase.from('mochi_memory_log').insert([{ action: 'create_memo', detail: { title: args.title } }]);
+      return `📋 メモを作成したもち！\n・「${args.title}」`;
 
     } else if (name === 'update_memo') {
       const { data: memos } = await supabase.from('memos').select('id, title, content');
@@ -391,10 +403,13 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         const newContent = args.mode === 'replace' ? args.content : (match.content ? match.content + '\n' + args.content : args.content);
         await supabase.from('memos').update({ content: newContent, updated_at: new Date().toISOString() }).eq('id', match.id);
         await supabase.from('mochi_memory_log').insert([{ action: 'update_memo', detail: { title: match.title, mode: args.mode } }]);
+        return args.mode === 'replace' ? `📋 メモを更新したもち！\n・「${match.title}」` : `📋 メモに追記したもち！\n・「${match.title}」`;
       }
     }
+    return null;
   } catch (err) {
     console.error(`Function call ${name} failed:`, err);
+    return null;
   }
 }
 
@@ -602,15 +617,22 @@ export async function POST(req: Request) {
     const candidate = response.candidates?.[0];
     let aiReply = '';
 
+    const actionReports: string[] = [];
     if (candidate?.content?.parts) {
       for (const part of candidate.content.parts) {
         if (part.functionCall && part.functionCall.name) {
-          await executeFunctionCall(part.functionCall.name, part.functionCall.args || {});
+          const report = await executeFunctionCall(part.functionCall.name, part.functionCall.args || {});
+          if (report) actionReports.push(report);
         }
         if (part.text) {
           aiReply += part.text;
         }
       }
+    }
+
+    // アクション報告があれば先にチャットに投稿（LLM不要の定型メッセージ）
+    for (const report of actionReports) {
+      await insertMochiMessage(report);
     }
 
     // テキスト応答がない場合（Function Callのみの場合）、再度テキスト生成
