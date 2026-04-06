@@ -630,11 +630,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // アクション報告があれば先にチャットに投稿（LLM不要の定型メッセージ）
-    for (const report of actionReports) {
-      await insertMochiMessage(report);
-    }
-
     // テキスト応答がない場合（Function Callのみの場合）、再度テキスト生成
     if (!aiReply.trim() && candidate?.content?.parts?.some((p: any) => p.functionCall)) {
       const followUp = await ai.models.generateContent({
@@ -649,11 +644,17 @@ export async function POST(req: Request) {
       aiReply = followUp.text?.trim() || '';
     }
 
+    // LLMの返答を先に投稿
     if (aiReply.trim()) {
       const insertError = await insertMochiMessage(aiReply.trim());
       if (insertError) {
         return NextResponse.json({ error: `Supabase Insert Error: ${JSON.stringify(insertError)}` }, { status: 500 });
       }
+    }
+
+    // アクション報告をLLM返答の後に投稿（定型メッセージ）
+    for (const report of actionReports) {
+      await insertMochiMessage(report);
     }
 
     // バックグラウンド: サマリー圧縮チェック（エラーは無視）
