@@ -81,7 +81,7 @@ export default function TodosPage() {
 
   const addTodo = async (parentId: string | null = null) => {
     if (!newTitle.trim()) return;
-    await supabase.from('todos').insert([{
+    const { error } = await supabase.from('todos').insert([{
       title: newTitle.trim(),
       parent_id: parentId,
       assignee: newAssignee,
@@ -89,16 +89,23 @@ export default function TodosPage() {
       status: 'not_started',
       created_by: myProfile,
     }]);
+    if (error) {
+      console.error('Todo insert error:', error);
+      alert('追加に失敗しました: ' + error.message);
+      return;
+    }
     setNewTitle('');
     setNewDueDate('');
     setNewAssignee('both');
     setShowAddForm(false);
     setAddParentId(null);
     if (parentId) setExpandedParents(prev => new Set(prev).add(parentId));
+    await fetchTodos();
   };
 
   const updateStatus = async (id: string, status: string) => {
     await supabase.from('todos').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    await fetchTodos();
   };
 
   const updateTitle = async (id: string) => {
@@ -114,14 +121,17 @@ export default function TodosPage() {
       : `「${title}」を削除しますか？`;
     if (!confirm(msg)) return;
     await supabase.from('todos').delete().eq('id', id);
+    await fetchTodos();
   };
 
   const updateAssignee = async (id: string, assignee: string) => {
     await supabase.from('todos').update({ assignee, updated_at: new Date().toISOString() }).eq('id', id);
+    await fetchTodos();
   };
 
   const updateDueDate = async (id: string, due_date: string) => {
     await supabase.from('todos').update({ due_date: due_date || null, updated_at: new Date().toISOString() }).eq('id', id);
+    await fetchTodos();
   };
 
   const childProgress = (parentId: string) => {
