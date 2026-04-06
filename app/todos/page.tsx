@@ -222,62 +222,98 @@ export default function TodosPage() {
     const st = STATUS[todo.status as keyof typeof STATUS] || STATUS.not_started;
     const overdue = todo.due_date && !isDone && new Date(todo.due_date) < new Date(new Date().toDateString());
     const editing = editId === todo.id;
+    const assigneeLabel = todo.assignee === 'user_a' ? 'ミルク' : todo.assignee === 'user_b' ? 'メリー' : '2人';
+    const dueDateLabel = todo.due_date ? new Date(todo.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : '期限なし';
 
     return (
       <div>
         <div style={{
-          padding: '14px 16px', marginLeft: isChild ? '20px' : 0,
+          padding: '12px 14px', marginLeft: isChild ? '20px' : 0,
           borderLeft: isChild ? '3px solid #e2e8f0' : 'none',
           background: isDone ? 'rgba(248,250,252,0.8)' : 'rgba(255,255,255,0.85)',
           borderRadius: isChild ? '0 14px 14px 0' : '14px',
           marginBottom: '6px', border: isChild ? 'none' : '1px solid rgba(0,0,0,0.06)',
           opacity: isDone ? 0.5 : 1, boxShadow: isChild ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
         }}>
-          {/* Row 1: controls + title + status */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {/* Expand toggle */}
+          {/* Row 1 (top): meta chips + delete */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            {/* 展開ボタン */}
             {!isChild && kids.length > 0 ? (
               <button onClick={() => { const n = new Set(expanded); isOpen ? n.delete(todo.id) : n.add(todo.id); setExpanded(n); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex', flexShrink: 0 }}>
-                {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
-            ) : !isChild ? <div style={{ width: 16 }} /> : null}
+            ) : !isChild ? <div style={{ width: 14 }} /> : null}
 
-            {/* Add subtask (parent only) */}
+            {/* 小タスク追加（親のみ） */}
             {!isChild && (
               <button onClick={() => { setAddParent(todo.id); setShowAdd(true); setExpanded(prev => new Set(prev).add(todo.id)); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: 0, display: 'flex', flexShrink: 0 }} title="小タスク追加">
-                <Plus size={14} />
+                <Plus size={13} />
               </button>
             )}
 
-            {/* Title */}
+            {/* メタ情報チップ（編集モードでselect/input、通常モードでタップ可能ラベル） */}
             {editing ? (
-              <div style={{ flex: 1, display: 'flex', gap: '4px', alignItems: 'center' }}>
-                <input value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEdit(todo.id)}
-                  autoFocus style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', background: 'white' }} />
-                <button onClick={() => saveEdit(todo.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
-                <button onClick={() => setEditId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
-              </div>
+              <>
+                <select value={todo.assignee} onChange={e => setAssignee(todo.id, e.target.value)}
+                  style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 600 }}>
+                  <option value="user_a">ミルク</option><option value="user_b">メリー</option><option value="both">2人</option>
+                </select>
+                <input type="date" value={todo.due_date || ''} onChange={e => setDue(todo.id, e.target.value)}
+                  style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: `1px solid ${overdue ? '#fca5a5' : '#e2e8f0'}`, background: overdue ? '#fef2f2' : 'white', color: overdue ? '#dc2626' : '#64748b' }} />
+                <select value={todo.status} onChange={e => setStatus(todo.id, e.target.value)}
+                  style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: 'none', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer' }}>
+                  {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </>
             ) : (
-              <div onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
-                style={{ flex: 1, cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: isDone ? '#94a3b8' : 'var(--text-main)', textDecoration: isDone ? 'line-through' : 'none', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {todo.title}
-                {prog && <span style={{ fontSize: '0.65rem', color: '#94a3b8', marginLeft: '6px', fontWeight: 400 }}>{prog.done}/{prog.total}</span>}
+              <>
+                <span onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
+                  style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: '#f8fafc', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}>
+                  {assigneeLabel}
+                </span>
+                <span onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
+                  style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: overdue ? '#fef2f2' : '#f8fafc', color: overdue ? '#dc2626' : '#64748b', fontWeight: 600, cursor: 'pointer' }}>
+                  {dueDateLabel}
+                </span>
+                <span onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
+                  style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer' }}>
+                  {st.label}
+                </span>
+              </>
+            )}
+
+            <div style={{ flex: 1 }} />
+
+            {/* プログレスバー */}
+            {prog && (
+              <div style={{ width: '36px', height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden', flexShrink: 0 }}>
+                <div style={{ height: '100%', width: `${(prog.done / prog.total) * 100}%`, background: '#9370db', borderRadius: '2px', transition: 'width 0.3s' }} />
               </div>
             )}
 
-            {/* Status chip */}
-            <select value={todo.status} onChange={e => setStatus(todo.id, e.target.value)}
-              style={{ fontSize: '0.65rem', padding: '3px 6px', borderRadius: '8px', border: 'none', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer', flexShrink: 0, appearance: 'none', WebkitAppearance: 'none', textAlign: 'center', minWidth: '52px' }}>
-              {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-
+            {/* 削除 */}
             <button onClick={() => deleteTask(todo.id, todo.title)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e2e8f0', padding: 0, flexShrink: 0 }}>
-              <Trash2 size={14} />
+              <Trash2 size={13} />
             </button>
           </div>
+
+          {/* Row 2 (bottom): title */}
+          {editing ? (
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <input value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEdit(todo.id)}
+                autoFocus style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.88rem', background: 'white', fontWeight: 600 }} />
+              <button onClick={() => saveEdit(todo.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
+              <button onClick={() => setEditId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
+            </div>
+          ) : (
+            <div onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
+              style={{ cursor: 'pointer', fontSize: '0.92rem', fontWeight: 600, color: isDone ? '#94a3b8' : 'var(--text-main)', textDecoration: isDone ? 'line-through' : 'none' }}>
+              {todo.title}
+            </div>
+          )}
 
           {/* Description */}
           {editing ? (
@@ -289,21 +325,6 @@ export default function TodosPage() {
               {todo.description}
             </p>
           ) : null}
-
-          {/* Meta row */}
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <select value={todo.assignee} onChange={e => setAssignee(todo.id, e.target.value)}
-              style={{ fontSize: '0.65rem', padding: '3px 6px', borderRadius: '6px', border: '1px solid #f1f5f9', background: '#f8fafc', color: '#64748b', fontWeight: 600 }}>
-              <option value="user_a">ミルク</option><option value="user_b">メリー</option><option value="both">2人</option>
-            </select>
-            <input type="date" value={todo.due_date || ''} onChange={e => setDue(todo.id, e.target.value)}
-              style={{ fontSize: '0.65rem', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${overdue ? '#fca5a5' : '#f1f5f9'}`, background: overdue ? '#fef2f2' : '#f8fafc', color: overdue ? '#dc2626' : '#64748b' }} />
-            {prog && (
-              <div style={{ height: '4px', flex: 1, minWidth: '40px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${(prog.done / prog.total) * 100}%`, background: '#9370db', borderRadius: '2px', transition: 'width 0.3s' }} />
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Children */}
