@@ -527,7 +527,7 @@ export default function ChatApp() {
                         </div>
                       )}
                       {msg.status === 'error' && <AlertCircle size={14} color="#dc2626" />}
-                      {msg.isMine && !msg.is_deleted && msg.is_read && msg.status === 'sent' && <span style={{ fontSize: '0.55rem', color: '#9370db', lineHeight: '1', marginBottom: '1px', fontWeight: 600 }}>既読</span>}
+                      {msg.isMine && !msg.is_deleted && msg.is_read && msg.status === 'sent' && <span style={{ fontSize: '0.55rem', color: '#94a3b8', lineHeight: '1', marginBottom: '1px', fontWeight: 600 }}>既読</span>}
                       <span style={{ fontSize: '0.58rem', color: msg.status === 'error' ? '#dc2626' : '#94a3b8', lineHeight: '1' }}>
                         {msg.status === 'sending' ? '↗' : msg.status === 'error' ? '!' : msg.time}
                       </span>
