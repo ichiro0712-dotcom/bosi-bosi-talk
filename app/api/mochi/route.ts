@@ -133,6 +133,39 @@ const mochiTools: FunctionDeclaration[] = [
       },
       required: ["message_keyword"]
     }
+  },
+  {
+    name: "list_memos",
+    description: "共有メモの一覧を確認する。「メモに何がある？」「メモ教えて」と聞かれたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    }
+  },
+  {
+    name: "create_memo",
+    description: "新しい共有メモを作成する。「○○をメモして」「メモに書いておいて」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: "メモのタイトル" },
+        content: { type: Type.STRING, description: "メモの本文" }
+      },
+      required: ["title", "content"]
+    }
+  },
+  {
+    name: "update_memo",
+    description: "既存のメモを更新する。「○○のメモに追記して」「○○のメモを更新して」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title_keyword: { type: Type.STRING, description: "メモを特定するためのキーワード（タイトルの一部でOK）" },
+        content: { type: Type.STRING, description: "追記または上書きする内容" },
+        mode: { type: Type.STRING, enum: ["append", "replace"], description: "append=末尾に追記, replace=内容を上書き" }
+      },
+      required: ["title_keyword", "content"]
+    }
   }
 ];
 
@@ -339,6 +372,26 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         await supabase.from('scheduled_reminders').delete().eq('id', match.id);
         await supabase.from('mochi_memory_log').insert([{ action: 'delete_reminder', detail: { message: match.message } }]);
       }
+
+    } else if (name === 'list_memos') {
+      // システムプロンプトにメモ情報を含めるので、ここでは追加処理なし
+
+    } else if (name === 'create_memo') {
+      await supabase.from('memos').insert([{
+        title: args.title,
+        content: args.content,
+        updated_at: new Date().toISOString()
+      }]);
+      await supabase.from('mochi_memory_log').insert([{ action: 'create_memo', detail: { title: args.title } }]);
+
+    } else if (name === 'update_memo') {
+      const { data: memos } = await supabase.from('memos').select('id, title, content');
+      const match = memos?.find(m => m.title.includes(args.title_keyword));
+      if (match) {
+        const newContent = args.mode === 'replace' ? args.content : (match.content ? match.content + '\n' + args.content : args.content);
+        await supabase.from('memos').update({ content: newContent, updated_at: new Date().toISOString() }).eq('id', match.id);
+        await supabase.from('mochi_memory_log').insert([{ action: 'update_memo', detail: { title: match.title, mode: args.mode } }]);
+      }
     }
   } catch (err) {
     console.error(`Function call ${name} failed:`, err);
@@ -427,13 +480,14 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     // 全メモリ層を並行取得
-    const [settings, layer1, layer2, layer3, remindersRes, todosRes] = await Promise.all([
+    const [settings, layer1, layer2, layer3, remindersRes, todosRes, memosRes] = await Promise.all([
       supabase.from('couple_settings').select('*').limit(1).single(),
       getLayer1(),
       getLayer2(),
       getLayer3(),
       supabase.from('scheduled_reminders').select('*').eq('is_active', true).order('next_run_at', { ascending: true }),
-      supabase.from('todos').select('*').neq('status', 'done').order('due_date', { ascending: true, nullsFirst: false })
+      supabase.from('todos').select('*').neq('status', 'done').order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('memos').select('id, title, content').order('updated_at', { ascending: false }).limit(10)
     ]);
 
     const characterPrompt = settings.data?.mochi_prompt || 'あなたは「もち」というサポーターボットです。丁寧語を使わずに親しみやすく話してください。';
@@ -488,6 +542,11 @@ export async function POST(req: Request) {
           }).join('\n')
         : '（進行中のタスクはありません）',
       '',
+      '=== 共有メモ ===',
+      memosRes.data && memosRes.data.length > 0
+        ? memosRes.data.map((m: any) => `- 「${m.title}」: ${(m.content || '').substring(0, 100)}${(m.content || '').length > 100 ? '...' : ''}`).join('\n')
+        : '（メモはありません）',
+      '',
       '=== 過去の会話のまとめ ===',
       layer2,
       '',
@@ -504,6 +563,9 @@ export async function POST(req: Request) {
       '- 「○○のリマインダー止めて」→ toggle_reminder で OFF。',
       '- 「○○のリマインダー消して」→ delete_reminder で削除。',
       '- 「やること教えて」→ 上のTODOリスト・リマインダー情報をもとに教える。',
+      '- 「○○をメモして」→ create_memo でメモ作成。',
+      '- 「○○のメモに追記して」→ update_memo (mode: append) で追記。',
+      '- 「メモに何がある？」→ 上の共有メモ情報をもとに教える。',
       '- ツール名やDB操作の詳細はユーザーに言わないでね。自然に「やっておいたよ！」と伝えて。',
     ].join('\n');
 

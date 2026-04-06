@@ -357,7 +357,7 @@ export default function ChatApp() {
       }
       if (!error && sendingToMochi && txt && !imgUrl) {
         const userName = myProfile === 'user_a' ? 'ミルク' : 'メリー';
-        setIsMochiMode(false); setIsMochiTyping(true);
+        setIsMochiTyping(true);
         fetch('/api/mochi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, userId: myProfile, userName, currentScreen: 'chat' }) })
         .then(async res => { if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || `HTTP ${res.status}`); } })
         .catch(err => setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（もちが応答できませんでした… ${err.message} 🍡）`, isMine: false, user_id: 'mochi', time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }), timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }) }]))
@@ -559,8 +559,8 @@ export default function ChatApp() {
               {[
                 { icon: <ImageIcon size={22} />, label: '画像', bg: '#e2e8f0', color: '#475569', onClick: () => document.getElementById('media-upload')?.click() },
                 { icon: <Smile size={22} />, label: 'スタンプ', bg: '#fce7f3', color: '#db2777', onClick: () => { setShowAttachMenu(false); setShowStampPicker(true); } },
-                { icon: <FilePlus size={22} />, label: '作成', bg: '#dbeafe', color: '#2563eb', onClick: () => { setShowAttachMenu(false); setIsStampModalOpen(true); } },
                 { icon: <img src="/mochi.png" alt="" style={{width:'26px', height:'26px', objectFit:'contain'}} />, label: isMochiMode ? 'ON' : 'もち', bg: isMochiMode ? '#cbd5e1' : '#f1f5f9', color: '#333', onClick: () => { setShowAttachMenu(false); setIsMochiMode(p => !p); }, border: isMochiMode ? '2px solid #333' : 'none' },
+                { icon: <FilePlus size={22} />, label: '作成', bg: '#dbeafe', color: '#2563eb', onClick: () => { setShowAttachMenu(false); setIsStampModalOpen(true); } },
               ].map((item, i) => (
                 <div key={i} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', cursor:'pointer'}} onClick={item.onClick}>
                   <div style={{background:item.bg, borderRadius:'50%', width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', color:item.color, border: (item as any).border || 'none'}}>{item.icon}</div>
