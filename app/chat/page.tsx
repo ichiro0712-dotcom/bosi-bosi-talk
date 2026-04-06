@@ -359,7 +359,25 @@ export default function ChatApp() {
         const userName = myProfile === 'user_a' ? 'ミルク' : 'メリー';
         setIsMochiTyping(true);
         fetch('/api/mochi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, userId: myProfile, userName, currentScreen: 'chat' }) })
-        .then(async res => { if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || `HTTP ${res.status}`); } })
+        .then(async res => {
+          if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || `HTTP ${res.status}`); }
+          // もちの返答がRealtimeで届かない場合のフォールバック: 2秒後にDBからリフレッシュ
+          setTimeout(async () => {
+            const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(10);
+            if (data) {
+              const sorted = data.reverse();
+              setMessages(prev => {
+                let updated = [...prev];
+                for (const m of sorted) {
+                  if (!updated.find(p => p.id === m.id)) {
+                    updated.push(formatMsg(m, myProfile!));
+                  }
+                }
+                return updated;
+              });
+            }
+          }, 2000);
+        })
         .catch(err => setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（もちが応答できませんでした… ${err.message} 🍡）`, isMine: false, user_id: 'mochi', time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }), timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }) }]))
         .finally(() => setIsMochiTyping(false));
       }

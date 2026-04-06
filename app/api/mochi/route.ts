@@ -166,6 +166,17 @@ const mochiTools: FunctionDeclaration[] = [
       },
       required: ["title_keyword", "content"]
     }
+  },
+  {
+    name: "delete_memo",
+    description: "メモを削除する。「○○のメモを消して」「○○のメモを削除して」と言われたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title_keyword: { type: Type.STRING, description: "メモを特定するためのキーワード（タイトルの一部でOK）" }
+      },
+      required: ["title_keyword"]
+    }
   }
 ];
 
@@ -409,6 +420,15 @@ async function executeFunctionCall(name: string, args: any): Promise<string | nu
         await supabase.from('mochi_memory_log').insert([{ action: 'update_memo', detail: { title: match.title, mode: args.mode } }]);
         return args.mode === 'replace' ? `📋 メモを更新したもち！\n・「${match.title}」` : `📋 メモに追記したもち！\n・「${match.title}」`;
       }
+
+    } else if (name === 'delete_memo') {
+      const { data: memos } = await supabase.from('memos').select('id, title');
+      const match = memos?.find(m => m.title.includes(args.title_keyword));
+      if (match) {
+        await supabase.from('memos').delete().eq('id', match.id);
+        await supabase.from('mochi_memory_log').insert([{ action: 'delete_memo', detail: { title: match.title } }]);
+        return `🗑️ メモを削除したもち！\n・「${match.title}」`;
+      }
     }
     return null;
   } catch (err) {
@@ -584,6 +604,7 @@ export async function POST(req: Request) {
       '- 「やること教えて」→ 上のTODOリスト・リマインダー情報をもとに教える。',
       '- 「○○をメモして」「メモ作って」→ 必ず create_memo ツールを呼ぶ。テキストだけで「作った」と言うのは禁止。',
       '- 「○○のメモに追記して」→ 必ず update_memo ツールを呼ぶ。',
+      '- 「○○のメモを消して」→ 必ず delete_memo ツールを呼ぶ。',
       '- 「メモに何がある？」→ 上の共有メモ情報をもとに教える。',
       '- 重要: TODO追加、メモ作成、リマインダー追加などのアクションは、必ず対応するツールを呼んで実行してね。テキストだけで「やった」と言うのは絶対ダメ。',
       '- ツール名やDB操作の詳細はユーザーに言わないでね。自然に会話して。',
