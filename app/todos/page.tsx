@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, ChevronDown, ChevronRight, Trash2, Check, X, Bell, BellOff } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 
@@ -83,10 +83,16 @@ export default function TodosPage() {
     else window.location.href = '/';
   }, []);
 
+  const editIdRef = useRef<string | null>(null);
+  useEffect(() => { editIdRef.current = editId; }, [editId]);
+
   useEffect(() => {
     if (!myProfile) return;
     fetchAll();
-    const ch1 = supabase.channel('todos-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => fetchTodos()).subscribe();
+    const ch1 = supabase.channel('todos-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => {
+      // 編集中はRealtimeでfetchしない（フォーカス飛び防止）
+      if (!editIdRef.current) fetchTodos();
+    }).subscribe();
     const ch2 = supabase.channel('reminders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_reminders' }, () => fetchReminders()).subscribe();
     return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
   }, [myProfile]);
@@ -125,12 +131,15 @@ export default function TodosPage() {
   const saveEdit = async (id: string) => {
     if (!editTitle.trim()) return;
     await supabase.from('todos').update({ title: editTitle.trim(), description: editDesc.trim() || null, updated_at: new Date().toISOString() }).eq('id', id);
-    setEditId(null); await fetchTodos();
+    editIdRef.current = null;
+    setEditId(null);
+    await fetchTodos();
   };
 
   const setStatus = async (id: string, status: string) => {
     await supabase.from('todos').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
-    await fetchTodos();
+    // ローカルstateを即時更新（fetchせずDOM安定）
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, status } : t));
   };
 
   const deleteTask = async (id: string, title: string) => {
@@ -140,10 +149,12 @@ export default function TodosPage() {
   };
 
   const setAssignee = async (id: string, v: string) => {
-    await supabase.from('todos').update({ assignee: v, updated_at: new Date().toISOString() }).eq('id', id); await fetchTodos();
+    await supabase.from('todos').update({ assignee: v, updated_at: new Date().toISOString() }).eq('id', id);
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, assignee: v } : t));
   };
   const setDue = async (id: string, v: string) => {
-    await supabase.from('todos').update({ due_date: v || null, updated_at: new Date().toISOString() }).eq('id', id); await fetchTodos();
+    await supabase.from('todos').update({ due_date: v || null, updated_at: new Date().toISOString() }).eq('id', id);
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: v || null } : t));
   };
 
   // ===== Reminder CRUD =====
