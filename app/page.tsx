@@ -75,7 +75,7 @@ export default function Home() {
       .or(`due_date.is.null,due_date.lte.${endOfWeek.toISOString().split('T')[0]}`)
       .is('parent_id', null)
       .order('due_date', { ascending: true, nullsFirst: false })
-      .limit(5);
+      .limit(10);
     if (data) setWeekTodos(data);
   };
 
@@ -320,50 +320,55 @@ export default function Home() {
               )}
             </div>
             
-            {/* 今週のTODO */}
-            {weekTodos.length > 0 && (
-              <Link href="/todos" style={{ textDecoration: 'none', width: '100%', display: 'block', marginTop: '16px' }}>
-                <div className="animate-slide-up" style={{
-                  background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(12px)',
-                  border: '1px solid rgba(255,255,255,0.3)', borderRadius: '16px',
-                  padding: '14px 18px', width: '100%'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                    <CheckSquare size={14} color="rgba(255,255,255,0.9)" />
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>今週のTODO</span>
-                  </div>
-                  {weekTodos.map(todo => {
-                    const isOverdue = todo.due_date && new Date(todo.due_date) < new Date(new Date().toDateString());
-                    return (
-                      <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
-                        <div style={{
-                          width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
-                          background: todo.status === 'trouble' || todo.status === 'delayed' ? '#f87171'
-                            : todo.status === 'on_track' ? '#4ade80'
-                            : todo.status === 'blocked' ? '#c084fc'
-                            : 'rgba(255,255,255,0.5)'
-                        }} />
-                        <span style={{ fontSize: '0.8rem', color: 'white', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {todo.title}
-                        </span>
-                        {todo.due_date && (
-                          <span style={{ fontSize: '0.65rem', color: isOverdue ? '#fca5a5' : 'rgba(255,255,255,0.6)', flexShrink: 0 }}>
-                            {new Date(todo.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </Link>
-            )}
-
             <div className="animate-slide-up" style={{ marginTop: '12px', color: 'rgba(255,255,255,0.6)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <ImageIcon size={12} /> 何もない場所を長押しすると背景画像を変更できます
             </div>
           </>
         )}
       </div>
+
+      {/* 今週のTODO — フッターの上に固定 */}
+      {weekTodos.length > 0 && (
+        <Link href="/todos" style={{ textDecoration: 'none', position: 'absolute', bottom: '80px', left: '12px', right: '12px', zIndex: 3 }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255,255,255,0.3)', borderRadius: '16px',
+            padding: '12px 16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckSquare size={14} color="rgba(255,255,255,0.9)" />
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>今週のTODO</span>
+              </div>
+              {weekTodos.length > 3 && (
+                <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.6)' }}>他{weekTodos.length - 3}件 →</span>
+              )}
+            </div>
+            {weekTodos.slice(0, 3).map(todo => {
+              const isOverdue = todo.due_date && new Date(todo.due_date) < new Date(new Date().toDateString());
+              return (
+                <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0' }}>
+                  <div style={{
+                    width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                    background: todo.status === 'trouble' || todo.status === 'delayed' ? '#f87171'
+                      : todo.status === 'on_track' ? '#4ade80'
+                      : todo.status === 'blocked' ? '#c084fc'
+                      : 'rgba(255,255,255,0.5)'
+                  }} />
+                  <span style={{ fontSize: '0.78rem', color: 'white', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {todo.title}
+                  </span>
+                  {todo.due_date && (
+                    <span style={{ fontSize: '0.6rem', color: isOverdue ? '#fca5a5' : 'rgba(255,255,255,0.6)', flexShrink: 0 }}>
+                      {new Date(todo.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Link>
+      )}
 
       {showAnnivModal && <AnniversaryModal onClose={() => setShowAnnivModal(false)} />}
     </div>
