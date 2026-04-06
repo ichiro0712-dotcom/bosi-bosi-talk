@@ -8,14 +8,12 @@ import dynamic from 'next/dynamic';
 
 const ReminderModal = dynamic(() => import('./ReminderModal'), { ssr: false });
 const AnniversaryModal = dynamic(() => import('./AnniversaryModal'), { ssr: false });
-const MochiSettingsModal = dynamic(() => import('./MochiSettingsModal'), { ssr: false });
 
 export default function Navigation() {
   const pathname = usePathname();
   const [showMenu, setShowMenu] = useState(false);
   const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
   const [isAnniversaryMenuOpen, setIsAnniversaryMenuOpen] = useState(false);
-  const [isMochiSettingsOpen, setIsMochiSettingsOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
@@ -115,10 +113,10 @@ export default function Navigation() {
                         <Clock size={18} />
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>リマインダ設定</span>
                       </button>
-                      <button onClick={() => { setShowMenu(false); setIsMochiSettingsOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                      <Link href="/mochi-settings" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', textDecoration: 'none', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                         <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>🍡</span>
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>もちAI設定</span>
-                      </button>
+                      </Link>
                       <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                         <Download size={18} />
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>アプリDL</span>
@@ -182,10 +180,10 @@ export default function Navigation() {
                       <Clock size={18} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>リマインダ設定</span>
                     </button>
-                    <button onClick={() => { setShowMenu(false); setIsMochiSettingsOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
+                    <Link href="/mochi-settings" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', textDecoration: 'none', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                       <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>🍡</span>
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>もちAI設定</span>
-                    </button>
+                    </Link>
                     <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                       <Download size={18} />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>アプリDL</span>
@@ -222,7 +220,6 @@ export default function Navigation() {
       
       {isReminderMenuOpen && <ReminderModal onClose={() => setIsReminderMenuOpen(false)} />}
       {isAnniversaryMenuOpen && <AnniversaryModal onClose={() => setIsAnniversaryMenuOpen(false)} />}
-      {isMochiSettingsOpen && <MochiSettingsModal onClose={() => setIsMochiSettingsOpen(false)} />}
     </>
   );
 }

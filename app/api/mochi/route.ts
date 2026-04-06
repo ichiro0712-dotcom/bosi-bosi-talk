@@ -297,7 +297,7 @@ export async function POST(req: Request) {
       config: {
         systemInstruction: systemPrompt,
         temperature: 0.7,
-        maxOutputTokens: 500,
+        maxOutputTokens: 2000,
         tools: [{ functionDeclarations: mochiTools }],
       }
     });
@@ -325,7 +325,7 @@ export async function POST(req: Request) {
         config: {
           systemInstruction: systemPrompt,
           temperature: 0.7,
-          maxOutputTokens: 500,
+          maxOutputTokens: 2000,
         }
       });
       aiReply = followUp.text?.trim() || '';
