@@ -174,7 +174,15 @@ export default function ChatApp() {
             const msg = formatMsg(newMsg, myProfile);
             setMessages(prev => {
               if (prev.find(p => p.id === newMsg.id)) return prev;
-              const withoutTemp = prev.filter(m => !(m.id.toString().startsWith('temp_') && m.text === newMsg.text && (m.imageUrl || null) === (newMsg.image_url || null) && m.isMine === (newMsg.user_id === myProfile)));
+              // tempメッセージ置換: 同じ送信者 + テキスト一致 or 画像送信（テキスト空）
+              const withoutTemp = prev.filter(m => {
+                if (!m.id.toString().startsWith('temp_')) return true;
+                if (m.user_id !== newMsg.user_id) return true;
+                // テキスト一致 or 両方画像（テキスト空同士）
+                if (m.text === newMsg.text) return false;
+                if (!m.text && !newMsg.text && m.imageUrl && newMsg.image_url) return false;
+                return true;
+              });
               return [...withoutTemp, msg];
             });
             // 画面がアクティブな時のみ既読にする
@@ -340,9 +348,14 @@ export default function ChatApp() {
       const { error } = await supabase.from('messages').insert([insertData]);
       if (error) {
         console.error("Send error", error);
-        // エラー状態に変更
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' as const } : m));
-      } else if (sendingToMochi && txt && !imgUrl) {
+      } else {
+        // 送信成功: Realtimeで置換されなかった場合のフォールバック（3秒後にtempを送信済みに）
+        setTimeout(() => {
+          setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sent' as const, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) } : m));
+        }, 3000);
+      }
+      if (!error && sendingToMochi && txt && !imgUrl) {
         const userName = myProfile === 'user_a' ? 'ミルク' : 'メリー';
         setIsMochiMode(false); setIsMochiTyping(true);
         fetch('/api/mochi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, userId: myProfile, userName, currentScreen: 'chat' }) })
