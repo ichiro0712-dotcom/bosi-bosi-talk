@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell, Clock, Home, Heart } from 'lucide-react';
+import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell, Clock, Home, Heart, CheckSquare } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const ReminderModal = dynamic(() => import('./ReminderModal'), { ssr: false });
@@ -68,7 +68,8 @@ export default function Navigation() {
     { name: 'HOME', href: '/', icon: Home },
     { name: 'チャット', href: '/chat', icon: MessageCircle },
     { name: 'アルバム', href: 'https://photos.app.goo.gl/U7nscr2zKsxzYZrd6', icon: ImageIcon, external: true },
-    { name: 'メモ（共有）', href: '/memos', icon: FileText },
+    { name: 'TODO', href: '/todos', icon: CheckSquare },
+    { name: 'メモ', href: '/memos', icon: FileText },
     { name: '', isMenuBtn: true, icon: MoreVertical }
   ];
 

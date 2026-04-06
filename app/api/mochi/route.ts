@@ -50,6 +50,27 @@ const mochiTools: FunctionDeclaration[] = [
       },
       required: ["vibe", "reason"]
     }
+  },
+  {
+    name: "add_todo",
+    description: "2人のTODOリストに新しいタスクを追加する。ユーザーが「○○やらなきゃ」「○○を予定に入れて」と言ったときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: "タスクのタイトル（例: 引っ越しの荷造り）" },
+        assignee: { type: Type.STRING, enum: ["user_a", "user_b", "both"], description: "担当: ミルク=user_a, メリー=user_b, 2人=both" },
+        due_date: { type: Type.STRING, description: "期限（YYYY-MM-DD形式、なければ空文字）" }
+      },
+      required: ["title"]
+    }
+  },
+  {
+    name: "list_todos",
+    description: "現在のTODOリストを確認する。ユーザーが「今のタスク教えて」「やること何がある？」と聞いたときに使う。",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    }
   }
 ];
 
@@ -163,6 +184,22 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
         action: 'update_relationship_vibe',
         detail: { vibe: args.vibe, reason: args.reason }
       }]);
+
+    } else if (name === 'add_todo') {
+      await supabase.from('todos').insert([{
+        title: args.title,
+        assignee: args.assignee || 'both',
+        due_date: args.due_date || null,
+        created_by: 'mochi',
+      }]);
+      await supabase.from('mochi_memory_log').insert([{
+        action: 'add_todo',
+        detail: { title: args.title, assignee: args.assignee, due_date: args.due_date }
+      }]);
+
+    } else if (name === 'list_todos') {
+      // list_todosは情報取得のみ、executeFunctionCallの戻り値として使う
+      // （実際のレスポンスはシステムプロンプトに含まれたTODO情報で対応）
     }
   } catch (err) {
     console.error(`Function call ${name} failed:`, err);
@@ -243,12 +280,13 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     // 全メモリ層を並行取得
-    const [settings, layer1, layer2, layer3, remindersRes] = await Promise.all([
+    const [settings, layer1, layer2, layer3, remindersRes, todosRes] = await Promise.all([
       supabase.from('couple_settings').select('*').limit(1).single(),
       getLayer1(),
       getLayer2(),
       getLayer3(),
-      supabase.from('scheduled_reminders').select('*').eq('is_active', true).order('next_run_at', { ascending: true })
+      supabase.from('scheduled_reminders').select('*').eq('is_active', true).order('next_run_at', { ascending: true }),
+      supabase.from('todos').select('*').neq('status', 'done').order('due_date', { ascending: true, nullsFirst: false })
     ]);
 
     const characterPrompt = settings.data?.mochi_prompt || 'あなたは「もち」というサポーターボットです。丁寧語を使わずに親しみやすく話してください。';
@@ -293,6 +331,16 @@ export async function POST(req: Request) {
       '=== 有効なリマインダー ===',
       reminderInfo,
       '',
+      '=== 進行中のTODOリスト ===',
+      todosRes.data && todosRes.data.length > 0
+        ? todosRes.data.map((t: any) => {
+            const assigneeLabel = t.assignee === 'user_a' ? 'ミルク' : t.assignee === 'user_b' ? 'メリー' : '2人';
+            const statusLabel: Record<string, string> = { not_started: 'まだ', on_track: '順調', trouble: 'トラブル', delayed: '遅れてる', blocked: '止まってる' };
+            const parent = t.parent_id ? '  (小タスク)' : '';
+            return `- ${t.title}${parent} [${statusLabel[t.status] || t.status}] 担当:${assigneeLabel}${t.due_date ? ' 期限:' + t.due_date : ''}`;
+          }).join('\n')
+        : '（進行中のタスクはありません）',
+      '',
       '=== 過去の会話のまとめ ===',
       layer2,
       '',
@@ -301,7 +349,9 @@ export async function POST(req: Request) {
       '=== 重要なルール ===',
       '- 新しい事実を知ったら update_user_profile ツールで記憶してね。すでに知っていることは記憶しなくていい。',
       '- 2人の雰囲気が変わったと感じたら update_relationship_vibe ツールで更新してね。普段通りなら不要。',
-      '- ツールを使ったことはユーザーに言わないでね。自然に会話して。',
+      '- 「○○やらなきゃ」「○○を予定に入れて」と言われたら add_todo ツールでTODOに追加してね。追加したことは伝えてOK。',
+      '- 「やること教えて」「タスク何ある？」と聞かれたら、上のTODOリスト情報をもとに教えてね。',
+      '- ツールを使ったこと自体（ツール名やDB操作の詳細）はユーザーに言わないでね。自然に会話して。',
     ].join('\n');
 
     // 会話履歴をGemini形式に変換

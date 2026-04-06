@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../utils/supabase/client';
-import { Image as ImageIcon, Heart } from 'lucide-react';
+import { Image as ImageIcon, Heart, CheckSquare } from 'lucide-react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 
 const AnniversaryModal = dynamic(() => import('./components/AnniversaryModal'), { ssr: false });
@@ -13,7 +14,8 @@ export default function Home() {
   const [settings, setSettings] = useState<{ anniversary_date: string | null; top_image_url: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAnnivModal, setShowAnnivModal] = useState(false);
-  
+  const [weekTodos, setWeekTodos] = useState<any[]>([]);
+
   const timerRef = useRef<any>(null);
 
   const postMochiMessage = async (text: string) => {
@@ -54,13 +56,27 @@ export default function Home() {
   useEffect(() => {
     if (!myProfile) return;
     fetchSettings();
-  }, [myProfile, showAnnivModal]); // モーダルを閉じたときに再フェッチする
+    fetchWeekTodos();
+  }, [myProfile, showAnnivModal]);
 
   const fetchSettings = async () => {
     setLoading(true);
     const { data } = await supabase.from('couple_settings').select('*').limit(1).single();
     if (data) setSettings(data);
     setLoading(false);
+  };
+
+  const fetchWeekTodos = async () => {
+    const today = new Date();
+    const endOfWeek = new Date(today);
+    endOfWeek.setDate(today.getDate() + 7);
+    const { data } = await supabase.from('todos').select('*')
+      .neq('status', 'done')
+      .or(`due_date.is.null,due_date.lte.${endOfWeek.toISOString().split('T')[0]}`)
+      .is('parent_id', null)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .limit(5);
+    if (data) setWeekTodos(data);
   };
 
   const calculateCounters = () => {
@@ -304,7 +320,45 @@ export default function Home() {
               )}
             </div>
             
-            <div className="animate-slide-up" style={{ marginTop: '16px', color: 'rgba(255,255,255,0.6)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* 今週のTODO */}
+            {weekTodos.length > 0 && (
+              <Link href="/todos" style={{ textDecoration: 'none', width: '100%', display: 'block', marginTop: '16px' }}>
+                <div className="animate-slide-up" style={{
+                  background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255,255,255,0.3)', borderRadius: '16px',
+                  padding: '14px 18px', width: '100%'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                    <CheckSquare size={14} color="rgba(255,255,255,0.9)" />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>今週のTODO</span>
+                  </div>
+                  {weekTodos.map(todo => {
+                    const isOverdue = todo.due_date && new Date(todo.due_date) < new Date(new Date().toDateString());
+                    return (
+                      <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+                        <div style={{
+                          width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                          background: todo.status === 'trouble' || todo.status === 'delayed' ? '#f87171'
+                            : todo.status === 'on_track' ? '#4ade80'
+                            : todo.status === 'blocked' ? '#c084fc'
+                            : 'rgba(255,255,255,0.5)'
+                        }} />
+                        <span style={{ fontSize: '0.8rem', color: 'white', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {todo.title}
+                        </span>
+                        {todo.due_date && (
+                          <span style={{ fontSize: '0.65rem', color: isOverdue ? '#fca5a5' : 'rgba(255,255,255,0.6)', flexShrink: 0 }}>
+                            {new Date(todo.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Link>
+            )}
+
+            <div className="animate-slide-up" style={{ marginTop: '12px', color: 'rgba(255,255,255,0.6)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <ImageIcon size={12} /> 何もない場所を長押しすると背景画像を変更できます
             </div>
           </>
