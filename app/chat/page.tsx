@@ -108,11 +108,6 @@ export default function ChatApp() {
             imageUrl: m.image_url, is_read: m.is_read, status: 'sent' as const, user_id: m.user_id, target_user: m.target_user
           }));
           setMessages(formatted);
-          // 相手から来た未読メッセージを開いた瞬間に全て「既読」にするアップデート処理
-          const unreadFromOther = sortedData.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
-          if (unreadFromOther.length > 0) {
-            supabase.from('messages').update({ is_read: true }).in('id', unreadFromOther).then();
-          }
         }
       } catch (e) {
         setIsDBReady(false);
@@ -136,12 +131,6 @@ export default function ChatApp() {
                 imageUrl: newMsg.image_url, is_read: newMsg.is_read, status: 'sent', user_id: newMsg.user_id, target_user: newMsg.target_user
               }];
             });
-            // リアルタイムで受信したら、相手のメッセージのみ「既読」をつける
-            setTimeout(() => {
-              if (newMsg.user_id !== myProfile) {
-                supabase.from('messages').update({ is_read: true }).eq('id', newMsg.id).then();
-              }
-            }, 500);
           } else if (payload.eventType === 'UPDATE') {
             const updatedMsg = payload.new as any;
             setMessages(prev => prev.map(m => m.id === updatedMsg.id ? { ...m, is_read: updatedMsg.is_read } : m));

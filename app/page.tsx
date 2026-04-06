@@ -23,8 +23,7 @@ export default function Home() {
     // DB挿入
     const { error: dbErr } = await supabase.from('messages').insert([{
       text: text,
-      user_id: 'mochi',
-      is_read: false
+      user_id: 'mochi'
     }]);
     if (dbErr) {
       console.error("Mochi msg insert error:", dbErr);

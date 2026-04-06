@@ -92,8 +92,7 @@ export default function AnniversaryModal({ onClose }: { onClose: () => void }) {
       const combinedMessage = messages.join('\n');
       await supabase.from('messages').insert([{
         text: combinedMessage,
-        user_id: 'mochi',
-        is_read: false
+        user_id: 'mochi'
       }]);
       try {
         await fetch('/api/notify', {

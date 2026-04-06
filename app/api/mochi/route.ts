@@ -89,8 +89,7 @@ export async function POST(req: Request) {
 async function insertMochiMessage(text: string) {
   const { error } = await supabase.from('messages').insert([{
     text,
-    user_id: 'mochi',
-    is_read: false
+    user_id: 'mochi'
   }]);
   
   if (error) {
