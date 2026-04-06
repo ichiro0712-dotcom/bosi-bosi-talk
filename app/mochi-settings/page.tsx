@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Save, ChevronLeft, Bot, User, Heart, FileText, ScrollText } from 'lucide-react';
+import { Save, ChevronLeft, Bot, User, Heart, FileText, ScrollText, Copy } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import Link from 'next/link';
 
@@ -213,10 +213,27 @@ export default function MochiSettingsPage() {
 
             {profiles.map(profile => (
               <div key={profile.user_id} style={{ background: 'rgba(255,255,255,0.7)', padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
-                <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', margin: '0 0 20px', gap: '8px' }}>
                   <img src={profile.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : '/stamps/stamp_custom_8.png'} alt="" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
-                  {profile.display_name}
-                </h3>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', flex: 1 }}>
+                    {profile.display_name}
+                  </h3>
+                  <button onClick={() => {
+                    const cats = [
+                      { key: 'basic', label: '基本情報' }, { key: 'personality', label: '性格・価値観' },
+                      { key: 'business', label: '事業・仕事' }, { key: 'health', label: '健康・生活' },
+                      { key: 'finance', label: 'お金' }, { key: 'hobbies', label: '趣味・興味' },
+                      { key: 'other', label: 'その他' }
+                    ];
+                    const text = `【${profile.display_name}】\n\n` + cats
+                      .filter(c => (profile.facts as any)[c.key]?.trim())
+                      .map(c => `[${c.label}]\n${(profile.facts as any)[c.key].trim()}`)
+                      .join('\n\n');
+                    navigator.clipboard.writeText(text).then(() => alert('コピーしました'));
+                  }} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#64748b', fontSize: '0.7rem', fontWeight: 600 }}>
+                    <Copy size={13} /> コピー
+                  </button>
+                </div>
 
                 {([
                   { key: 'basic' as const, label: '基本情報', icon: '📋', placeholder: '名前、年齢、居住地、経歴など' },
