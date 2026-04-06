@@ -3,16 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell, Clock, Home, Heart, CheckSquare } from 'lucide-react';
+import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell, Home, Heart, CheckSquare } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-const ReminderModal = dynamic(() => import('./ReminderModal'), { ssr: false });
 const AnniversaryModal = dynamic(() => import('./AnniversaryModal'), { ssr: false });
 
 export default function Navigation() {
   const pathname = usePathname();
   const [showMenu, setShowMenu] = useState(false);
-  const [isReminderMenuOpen, setIsReminderMenuOpen] = useState(false);
   const [isAnniversaryMenuOpen, setIsAnniversaryMenuOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -110,10 +108,6 @@ export default function Navigation() {
                         <Heart size={18} color="#e11d48" />
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>記念日設定</span>
                       </button>
-                      <button onClick={() => { setShowMenu(false); setIsReminderMenuOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
-                        <Clock size={18} />
-                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>リマインダ設定</span>
-                      </button>
                       <Link href="/mochi-settings" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', textDecoration: 'none', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                         <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>🍡</span>
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>もちAI設定</span>
@@ -177,10 +171,6 @@ export default function Navigation() {
                       <Heart size={18} color="#e11d48" />
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>記念日設定</span>
                     </button>
-                    <button onClick={() => { setShowMenu(false); setIsReminderMenuOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
-                      <Clock size={18} />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>リマインダ設定</span>
-                    </button>
                     <Link href="/mochi-settings" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', textDecoration: 'none', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
                       <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>🍡</span>
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>もちAI設定</span>
@@ -219,7 +209,6 @@ export default function Navigation() {
         />
       )}
       
-      {isReminderMenuOpen && <ReminderModal onClose={() => setIsReminderMenuOpen(false)} />}
       {isAnniversaryMenuOpen && <AnniversaryModal onClose={() => setIsAnniversaryMenuOpen(false)} />}
     </>
   );
