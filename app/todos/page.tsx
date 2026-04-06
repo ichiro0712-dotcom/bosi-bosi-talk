@@ -225,6 +225,23 @@ export default function TodosPage() {
     const assigneeLabel = todo.assignee === 'user_a' ? 'ミルク' : todo.assignee === 'user_b' ? 'メリー' : '2人';
     const dueDateLabel = todo.due_date ? new Date(todo.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : '期限なし';
 
+    // 期限バッジ判定
+    let urgencyBadge: { label: string; color: string; bg: string } | null = null;
+    if (todo.due_date && !isDone) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const due = new Date(todo.due_date); due.setHours(0, 0, 0, 0);
+      const diffDays = Math.floor((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const endOfWeek = new Date(today); endOfWeek.setDate(today.getDate() + (7 - today.getDay()));
+
+      if (diffDays < 0) {
+        urgencyBadge = { label: '期限超過', color: '#fff', bg: '#dc2626' };
+      } else if (diffDays === 0) {
+        urgencyBadge = { label: '今日中', color: '#fff', bg: '#ea580c' };
+      } else if (due <= endOfWeek) {
+        urgencyBadge = { label: '今週中', color: '#9370db', bg: '#f0ebff' };
+      }
+    }
+
     return (
       <div>
         <div style={{
@@ -266,6 +283,11 @@ export default function TodosPage() {
                   style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: 'none', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer' }}>
                   {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
+                {urgencyBadge && (
+                  <span style={{ fontSize: '0.6rem', padding: '2px 7px', borderRadius: '8px', background: urgencyBadge.bg, color: urgencyBadge.color, fontWeight: 700, flexShrink: 0 }}>
+                    {urgencyBadge.label}
+                  </span>
+                )}
               </>
             ) : (
               <>
@@ -281,6 +303,11 @@ export default function TodosPage() {
                   style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer' }}>
                   {st.label}
                 </span>
+                {urgencyBadge && (
+                  <span style={{ fontSize: '0.6rem', padding: '2px 7px', borderRadius: '8px', background: urgencyBadge.bg, color: urgencyBadge.color, fontWeight: 700 }}>
+                    {urgencyBadge.label}
+                  </span>
+                )}
               </>
             )}
 
