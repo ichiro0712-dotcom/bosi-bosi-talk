@@ -388,11 +388,15 @@ async function executeFunctionCall(name: string, args: any): Promise<string | nu
       return null; // LLMの返答で対応
 
     } else if (name === 'create_memo') {
-      await supabase.from('memos').insert([{
+      const { error: memoErr } = await supabase.from('memos').insert([{
         title: args.title,
-        content: args.content,
+        content: args.content || '',
         updated_at: new Date().toISOString()
       }]);
+      if (memoErr) {
+        console.error('Memo create error:', memoErr);
+        return null;
+      }
       await supabase.from('mochi_memory_log').insert([{ action: 'create_memo', detail: { title: args.title } }]);
       return `📋 メモを作成したもち！\n・「${args.title}」`;
 
@@ -578,10 +582,11 @@ export async function POST(req: Request) {
       '- 「○○のリマインダー止めて」→ toggle_reminder で OFF。',
       '- 「○○のリマインダー消して」→ delete_reminder で削除。',
       '- 「やること教えて」→ 上のTODOリスト・リマインダー情報をもとに教える。',
-      '- 「○○をメモして」→ create_memo でメモ作成。',
-      '- 「○○のメモに追記して」→ update_memo (mode: append) で追記。',
+      '- 「○○をメモして」「メモ作って」→ 必ず create_memo ツールを呼ぶ。テキストだけで「作った」と言うのは禁止。',
+      '- 「○○のメモに追記して」→ 必ず update_memo ツールを呼ぶ。',
       '- 「メモに何がある？」→ 上の共有メモ情報をもとに教える。',
-      '- ツール名やDB操作の詳細はユーザーに言わないでね。自然に「やっておいたよ！」と伝えて。',
+      '- 重要: TODO追加、メモ作成、リマインダー追加などのアクションは、必ず対応するツールを呼んで実行してね。テキストだけで「やった」と言うのは絶対ダメ。',
+      '- ツール名やDB操作の詳細はユーザーに言わないでね。自然に会話して。',
     ].join('\n');
 
     // 会話履歴をGemini形式に変換
