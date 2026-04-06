@@ -225,7 +225,7 @@ export default function ChatApp() {
         fetch('/api/mochi', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: txt, userId: myProfile, userName })
+          body: JSON.stringify({ text: txt, userId: myProfile, userName, currentScreen: 'chat' })
         })
         .then(async res => {
           const data = await res.json().catch(() => null);
