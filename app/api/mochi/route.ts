@@ -29,14 +29,15 @@ try {
 const mochiTools: FunctionDeclaration[] = [
   {
     name: "update_user_profile",
-    description: "ユーザーについて新しくわかった事実を記憶する。性格、好み、仕事、趣味、最近ハマっていることなど。すでに知っている情報は記憶しない。",
+    description: "ユーザーについて新しくわかった事実を記憶する。すでに知っていることは記憶しない。適切なカテゴリを選んで追記する。",
     parameters: {
       type: Type.OBJECT,
       properties: {
         user_id: { type: Type.STRING, enum: ["user_a", "user_b"], description: "ミルク=user_a, メリー=user_b" },
-        fact: { type: Type.STRING, description: "新しくわかった事実（例: 最近プログラミングを勉強し始めた）" }
+        category: { type: Type.STRING, enum: ["basic", "personality", "business", "health", "finance", "hobbies", "other"], description: "basic=基本情報, personality=性格・価値観, business=事業・仕事, health=健康・生活, finance=お金, hobbies=趣味・興味, other=その他" },
+        fact: { type: Type.STRING, description: "新しくわかった事実（例: 最近ジムに通い始めた）" }
       },
-      required: ["user_id", "fact"]
+      required: ["user_id", "category", "fact"]
     }
   },
   {
@@ -146,15 +147,27 @@ async function getLayer1(): Promise<string> {
 
     let result = '';
 
+    const categoryLabels: Record<string, string> = {
+      basic: '基本情報', personality: '性格・価値観', business: '事業・仕事',
+      health: '健康・生活', finance: 'お金', hobbies: '趣味・興味', other: 'その他'
+    };
+
     if (profilesRes.data && profilesRes.data.length > 0) {
       for (const p of profilesRes.data) {
-        const facts = (p.facts && Array.isArray(p.facts) && p.facts.length > 0)
-          ? p.facts.join('、')
-          : 'まだ情報なし';
-        const personality = p.personality || 'まだ把握していない';
         result += `【${p.display_name}（${p.user_id}）】\n`;
-        result += `  わかっていること: ${facts}\n`;
-        result += `  性格メモ: ${personality}\n`;
+        const facts = p.facts || {};
+        if (typeof facts === 'object' && !Array.isArray(facts)) {
+          for (const [key, label] of Object.entries(categoryLabels)) {
+            const text = (facts as any)[key];
+            if (text && typeof text === 'string' && text.trim()) {
+              result += `[${label}]\n${text.trim()}\n\n`;
+            }
+          }
+        } else if (Array.isArray(facts) && facts.length > 0) {
+          // 旧形式フォールバック
+          result += `  情報: ${facts.join('、')}\n`;
+        }
+        if (p.personality) result += `[性格メモ（旧）] ${p.personality}\n`;
       }
     }
 
@@ -210,16 +223,21 @@ async function getLayer3(): Promise<any[]> {
 async function executeFunctionCall(name: string, args: any): Promise<void> {
   try {
     if (name === 'update_user_profile') {
+      const category = args.category || 'other';
       const { data: profile } = await supabase
         .from('mochi_user_profiles')
         .select('facts')
         .eq('user_id', args.user_id)
         .single();
 
-      const currentFacts: string[] = (profile?.facts && Array.isArray(profile.facts)) ? profile.facts : [];
+      const currentFacts = (profile?.facts && typeof profile.facts === 'object' && !Array.isArray(profile.facts))
+        ? { ...profile.facts }
+        : { basic: '', personality: '', business: '', health: '', finance: '', hobbies: '', other: '' };
 
-      if (!currentFacts.includes(args.fact)) {
-        currentFacts.push(args.fact);
+      const existing = (currentFacts as any)[category] || '';
+      // 重複チェック（既に同じテキストが含まれていればスキップ）
+      if (!existing.includes(args.fact)) {
+        (currentFacts as any)[category] = existing ? `${existing}\n${args.fact}` : args.fact;
         await supabase
           .from('mochi_user_profiles')
           .update({ facts: currentFacts, updated_at: new Date().toISOString() })
@@ -228,7 +246,7 @@ async function executeFunctionCall(name: string, args: any): Promise<void> {
 
       await supabase.from('mochi_memory_log').insert([{
         action: 'update_user_profile',
-        detail: { user_id: args.user_id, fact: args.fact }
+        detail: { user_id: args.user_id, category, fact: args.fact }
       }]);
 
     } else if (name === 'update_relationship_vibe') {

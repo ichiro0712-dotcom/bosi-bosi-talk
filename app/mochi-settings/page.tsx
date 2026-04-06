@@ -5,11 +5,21 @@ import { Save, ChevronLeft, Bot, User, Heart, FileText, ScrollText } from 'lucid
 import { supabase } from '../../utils/supabase/client';
 import Link from 'next/link';
 
+type CategoryFacts = {
+  basic: string;
+  personality: string;
+  business: string;
+  health: string;
+  finance: string;
+  hobbies: string;
+  other: string;
+};
+
 type UserProfile = {
   id: number;
   user_id: string;
   display_name: string;
-  facts: string[];
+  facts: CategoryFacts;
   personality: string | null;
 };
 
@@ -52,7 +62,6 @@ export default function MochiSettingsPage() {
 
   // ユーザープロファイル
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [newFact, setNewFact] = useState<Record<string, string>>({});
 
   // 関係性
   const [relationship, setRelationship] = useState<Relationship | null>(null);
@@ -95,49 +104,24 @@ export default function MochiSettingsPage() {
     alert('保存しました');
   };
 
-  const saveProfile = async (profile: UserProfile) => {
-    setSaving(true);
+  const saveProfileFacts = async (userId: string, facts: CategoryFacts) => {
     await supabase.from('mochi_user_profiles')
-      .update({ facts: profile.facts, personality: profile.personality, updated_at: new Date().toISOString() })
-      .eq('user_id', profile.user_id);
-    setSaving(false);
+      .update({ facts, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
   };
 
-  const addFact = (userId: string) => {
-    const fact = newFact[userId]?.trim();
-    if (!fact) return;
+  const updateCategoryText = (userId: string, category: keyof CategoryFacts, text: string) => {
     setProfiles(prev => prev.map(p => {
       if (p.user_id === userId) {
-        const updated = { ...p, facts: [...p.facts, fact] };
-        saveProfile(updated);
-        return updated;
-      }
-      return p;
-    }));
-    setNewFact(prev => ({ ...prev, [userId]: '' }));
-  };
-
-  const removeFact = (userId: string, index: number) => {
-    setProfiles(prev => prev.map(p => {
-      if (p.user_id === userId) {
-        const updated = { ...p, facts: p.facts.filter((_, i) => i !== index) };
-        saveProfile(updated);
-        return updated;
+        return { ...p, facts: { ...p.facts, [category]: text } };
       }
       return p;
     }));
   };
 
-  const savePersonality = (userId: string, personality: string) => {
-    setProfiles(prev => prev.map(p => {
-      if (p.user_id === userId) return { ...p, personality };
-      return p;
-    }));
-  };
-
-  const commitPersonality = (userId: string) => {
+  const commitCategory = (userId: string) => {
     const profile = profiles.find(p => p.user_id === userId);
-    if (profile) saveProfile(profile);
+    if (profile) saveProfileFacts(userId, profile.facts);
   };
 
   const saveVibe = async (vibe: string, reason: string) => {
@@ -224,71 +208,42 @@ export default function MochiSettingsPage() {
         {activeTab === 'profiles' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ background: 'rgba(147,112,219,0.08)', padding: '14px', borderRadius: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              もちが覚えているミルク・メリーの情報です。手動で追加・削除できます。会話中にもちが自動で学習した内容もここに表示されます。
+              もちが覚えている情報です。カテゴリごとに自由に記入してください。会話中にもちが学習した内容も自動で追記されます。フォーカスを外すと自動保存されます。
             </div>
 
             {profiles.map(profile => (
               <div key={profile.user_id} style={{ background: 'rgba(255,255,255,0.7)', padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
-                <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <img src={profile.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : '/stamps/stamp_custom_8.png'} alt="" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
                   {profile.display_name}
                 </h3>
 
-                {/* 性格メモ */}
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>性格メモ（自由記述）</label>
-                  <textarea
-                    value={profile.personality || ''}
-                    onChange={e => savePersonality(profile.user_id, e.target.value)}
-                    onBlur={() => commitPersonality(profile.user_id)}
-                    placeholder="例: 明るくて元気、甘いもの好き、よく笑う"
-                    style={{
-                      width: '100%', minHeight: '60px', padding: '10px', borderRadius: '8px',
-                      border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.5)',
-                      fontSize: '0.85rem', resize: 'vertical', color: 'var(--text-main)'
-                    }}
-                  />
-                </div>
-
-                {/* ファクト一覧 */}
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>知っていること</label>
-                  {profile.facts.length === 0 && (
-                    <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '4px 0' }}>まだ情報がありません</p>
-                  )}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {profile.facts.map((fact, i) => (
-                      <div key={i} style={{
-                        background: '#f1f5f9', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem',
-                        color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px'
-                      }}>
-                        {fact}
-                        <button onClick={() => removeFact(profile.user_id, i)} style={{
-                          background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8',
-                          fontSize: '1rem', padding: '0 2px', lineHeight: 1
-                        }}>×</button>
-                      </div>
-                    ))}
+                {([
+                  { key: 'basic' as const, label: '基本情報', icon: '📋', placeholder: '名前、年齢、居住地、経歴など' },
+                  { key: 'personality' as const, label: '性格・価値観', icon: '🧠', placeholder: '思考スタイル、価値観、コミュニケーション傾向など' },
+                  { key: 'business' as const, label: '事業・仕事', icon: '💼', placeholder: '職業、関与事業、スキル、構想など' },
+                  { key: 'health' as const, label: '健康・生活', icon: '🏥', placeholder: '健康状態、生活習慣、サプリ、アレルギーなど' },
+                  { key: 'finance' as const, label: 'お金', icon: '💰', placeholder: '収入、支出、資産、投資方針など' },
+                  { key: 'hobbies' as const, label: '趣味・興味', icon: '🎵', placeholder: '好きなもの、趣味、興味のある分野など' },
+                  { key: 'other' as const, label: 'その他', icon: '📝', placeholder: 'その他の情報' },
+                ]).map(cat => (
+                  <div key={cat.key} style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>{cat.icon}</span> {cat.label}
+                    </label>
+                    <textarea
+                      value={profile.facts[cat.key] || ''}
+                      onChange={e => updateCategoryText(profile.user_id, cat.key, e.target.value)}
+                      onBlur={() => commitCategory(profile.user_id)}
+                      placeholder={cat.placeholder}
+                      style={{
+                        width: '100%', minHeight: profile.facts[cat.key] ? '100px' : '50px', padding: '10px 12px', borderRadius: '10px',
+                        border: '1px solid #e2e8f0', background: 'rgba(255,255,255,0.6)',
+                        fontSize: '0.82rem', lineHeight: '1.55', resize: 'vertical', color: 'var(--text-main)'
+                      }}
+                    />
                   </div>
-                </div>
-
-                {/* 新規ファクト追加 */}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    value={newFact[profile.user_id] || ''}
-                    onChange={e => setNewFact(prev => ({ ...prev, [profile.user_id]: e.target.value }))}
-                    onKeyDown={e => e.key === 'Enter' && addFact(profile.user_id)}
-                    placeholder="新しい情報を追加..."
-                    style={{
-                      flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)',
-                      background: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', color: 'var(--text-main)'
-                    }}
-                  />
-                  <button onClick={() => addFact(profile.user_id)} style={{
-                    background: '#9370db', color: 'white', padding: '8px 16px', borderRadius: '8px',
-                    fontWeight: 600, fontSize: '0.8rem'
-                  }}>追加</button>
-                </div>
+                ))}
               </div>
             ))}
           </div>
