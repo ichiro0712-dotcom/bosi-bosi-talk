@@ -210,45 +210,46 @@ export default function ChatApp() {
     setInputText("");
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     
+    // もちモードの状態を送信前にキャプチャ（送信後にOFFにするため）
+    const sendingToMochi = isMochiMode;
+
     // オプティミスティックUI（送信中ステータス付与）
     const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(7);
-    setMessages(prev => [...prev, { id: tempId, text: txt, isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: imgUrl, target_user: isMochiMode ? 'mochi' : undefined }]);
+    setMessages(prev => [...prev, { id: tempId, text: txt, isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: imgUrl, user_id: myProfile || undefined, target_user: sendingToMochi ? 'mochi' : undefined }]);
 
-    // Push通知をバックグラウンドで発火（awaitせずに即次へ）
-    triggerPushNotification(txt, imgUrl);
+    // もち宛でなければ通常のPush通知を送る
+    if (!sendingToMochi) {
+      triggerPushNotification(txt, imgUrl);
+    }
 
     if (isDBReady && myProfile) {
       // サーバーへ本送信
-      const { error } = await supabase.from('messages').insert([{ text: txt, image_url: imgUrl, user_id: myProfile, target_user: isMochiMode ? 'mochi' : null }]);
+      const { error } = await supabase.from('messages').insert([{ text: txt, image_url: imgUrl, user_id: myProfile, target_user: sendingToMochi ? 'mochi' : null }]);
       if (error) {
         console.error("Message send error", error);
-      } else {
+      } else if (sendingToMochi && txt && !imgUrl) {
         // もちモードがONであれば、送信直後にAPIを叩く
-        if (isMochiMode && txt && !imgUrl) {
-           const userName = myProfile === 'user_a' ? 'ミルク' : myProfile === 'user_b' ? 'メリー' : '誰か';
-           // UI上の演出：自分側ですぐにモードをOFFにする（連投防止や通常モードへの回帰）
-           setIsMochiMode(false);
-           setIsMochiTyping(true);
-           
-           fetch('/api/mochi', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ text: txt, userId: myProfile, userName })
-           })
-           .then(async res => {
-             const data = await res.json().catch(() => null);
-             if (!res.ok) throw new Error(data?.error || `HTTP error ${res.status}`);
-             console.log("Mochi response:", data);
-           })
-           .catch(err => {
-             console.error("Mochi API call failed", err);
-             // サーバー側のクラッシュや通信エラーの場合、直接UIにエラーを出す
-             setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（通信エラーでもちがお出かけしています... ${err.message} 🍡）`, isMine: false, user_id: 'mochi', time: '送信失敗' }]);
-           })
-           .finally(() => {
-             setIsMochiTyping(false);
-           });
-        }
+        const userName = myProfile === 'user_a' ? 'ミルク' : myProfile === 'user_b' ? 'メリー' : '誰か';
+        setIsMochiMode(false);
+        setIsMochiTyping(true);
+
+        fetch('/api/mochi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: txt, userId: myProfile, userName })
+        })
+        .then(async res => {
+          const data = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(data?.error || `HTTP error ${res.status}`);
+          console.log("Mochi response:", data);
+        })
+        .catch(err => {
+          console.error("Mochi API call failed", err);
+          setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（もちが応答できませんでした… ${err.message} 🍡）`, isMine: false, user_id: 'mochi', time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }), timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }) }]);
+        })
+        .finally(() => {
+          setIsMochiTyping(false);
+        });
       }
     }
   };
@@ -455,6 +456,13 @@ export default function ChatApp() {
             </div>
           )}
 
+          {isMochiMode && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px', padding: '6px 12px', background: '#f1f5f9', borderRadius: '12px' }}>
+              <img src="/mochi.png" alt="mochi" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>もちモード中 — メッセージはもちに届きます</span>
+              <button onClick={() => setIsMochiMode(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '1rem', padding: '0 4px', lineHeight: 1 }}>✕</button>
+            </div>
+          )}
           <div style={{ display: 'flex', background: isMochiMode ? '#f8fafc' : 'rgba(255, 255, 255, 0.65)', border: isMochiMode ? '2px solid #cbd5e1' : '1px solid var(--glass-border)', borderRadius: '24px', padding: '8px 16px', alignItems: 'center', gap: '12px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)', transition: 'all 0.3s' }}>
             <button onClick={() => {setShowAttachMenu(!showAttachMenu); setShowStampPicker(false);}} style={{ color: 'var(--text-muted)', background:'none', border:'none', cursor:'pointer', padding:'4px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', transition:'0.2s', backgroundColor: showAttachMenu ? 'rgba(0,0,0,0.05)' : 'transparent' }}>
               <Plus size={24} style={{ transform: showAttachMenu ? 'rotate(45deg)' : 'none', transition: 'all 0.2s' }} />
@@ -472,7 +480,7 @@ export default function ChatApp() {
               rows={1}
               style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '1rem', padding: '8px 0', resize: 'none', maxHeight: '120px' }}
             />
-            <button onClick={() => handleSend()} style={{ background: inputText ? 'var(--primary)' : '#e2e8f0', color: inputText ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: inputText ? 'pointer' : 'default', transition: 'all 0.2s' }}>
+            <button onClick={() => handleSend()} style={{ background: inputText ? (isMochiMode ? '#94a3b8' : 'var(--primary)') : '#e2e8f0', color: inputText ? 'white' : 'var(--text-muted)', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: inputText ? 'pointer' : 'default', transition: 'all 0.2s' }}>
               <Send size={18} style={{ transform: 'translate(1px, 1px)' }} />
             </button>
           </div>
