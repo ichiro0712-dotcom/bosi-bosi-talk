@@ -81,10 +81,6 @@ export default function Home() {
 
   const calculateCounters = () => {
     if (!settings?.anniversary_date) return null;
-    const start = new Date(settings.anniversary_date);
-    start.setHours(0, 0, 0, 0); // JST -> local
-    // If the database date is "2020-04-10", start will be interpreted correctly in local TZ by default, but let's be safe.
-    // Instead of raw new Date, let's parse YYYY-MM-DD
     const [y, m, d] = settings.anniversary_date.split('-');
     const startDate = new Date(Number(y), Number(m) - 1, Number(d));
     

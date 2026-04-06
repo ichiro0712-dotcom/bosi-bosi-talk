@@ -38,17 +38,26 @@ async function postMochiMessage(text: string) {
   } catch {}
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Vercel Cron認証チェック
+  const authHeader = request.headers.get('authorization');
+  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const now = new Date();
-    const jstHour = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })).getHours();
-    const jstDay = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })).getDay(); // 0=Sun, 1=Mon
-    const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }); // YYYY-MM-DD
+    const jstHour = (now.getUTCHours() + 9) % 24;
+    const jstDayOffset = now.getUTCHours() + 9 >= 24 ? 1 : 0;
+    const jstDate = new Date(now.getTime() + jstDayOffset * 86400000);
+    const jstDay = jstDate.getUTCDay(); // 0=Sun, 1=Mon
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const todayStr = jstNow.toISOString().split('T')[0]; // YYYY-MM-DD in JST
 
     const messages: string[] = [];
 
     // ===== 毎朝9:00〜9:59: 今日期限のタスクがあれば通知 =====
-    if (jstHour === 9) {
+    if (jstHour >= 9 && jstHour < 10) {
       const { data: todayTodos } = await supabase
         .from('todos')
         .select('title')
@@ -77,10 +86,11 @@ export async function GET() {
     }
 
     // ===== 毎週月曜10:00〜10:59: 今週のタスク一覧 =====
-    if (jstDay === 1 && jstHour === 10) {
+    if (jstDay === 1 && jstHour >= 10 && jstHour < 11) {
       const endOfWeek = new Date(now);
       endOfWeek.setDate(endOfWeek.getDate() + (7 - endOfWeek.getDay()));
-      const endStr = endOfWeek.toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' });
+      const endJst = new Date(endOfWeek.getTime() + 9 * 60 * 60 * 1000);
+      const endStr = endJst.toISOString().split('T')[0];
 
       const { data: weekTodos } = await supabase
         .from('todos')

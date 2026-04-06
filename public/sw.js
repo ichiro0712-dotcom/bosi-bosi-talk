@@ -27,7 +27,7 @@ self.addEventListener('push', function(event) {
       body: count > 1
         ? count + '件の新着メッセージがあります'
         : payload.body,
-      icon: '/icon-192x192.png',
+      icon: payload.icon || '/icon-192x192.png',
       badge: '/icon-192x192.png',
       vibrate: [200, 100, 200, 100, 200],
       tag: 'chat-message',

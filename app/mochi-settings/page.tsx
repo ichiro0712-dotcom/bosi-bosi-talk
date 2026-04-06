@@ -78,20 +78,25 @@ export default function MochiSettingsPage() {
 
   const loadAll = async () => {
     setLoading(true);
-    const [settingsRes, profilesRes, vibeRes, summariesRes, logsRes] = await Promise.all([
-      supabase.from('couple_settings').select('mochi_prompt').limit(1).single(),
-      supabase.from('mochi_user_profiles').select('*').order('user_id'),
-      supabase.from('mochi_relationship').select('*').limit(1).single(),
-      supabase.from('mochi_conversation_summaries').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('mochi_memory_log').select('*').order('created_at', { ascending: false }).limit(30),
-    ]);
+    try {
+      const [settingsRes, profilesRes, vibeRes, summariesRes, logsRes] = await Promise.all([
+        supabase.from('couple_settings').select('mochi_prompt').limit(1).single(),
+        supabase.from('mochi_user_profiles').select('*').order('user_id'),
+        supabase.from('mochi_relationship').select('*').limit(1).single(),
+        supabase.from('mochi_conversation_summaries').select('*').order('created_at', { ascending: false }).limit(10),
+        supabase.from('mochi_memory_log').select('*').order('created_at', { ascending: false }).limit(30),
+      ]);
 
-    if (settingsRes.data?.mochi_prompt) setMochiPrompt(settingsRes.data.mochi_prompt);
-    if (profilesRes.data) setProfiles(profilesRes.data);
-    if (vibeRes.data) setRelationship(vibeRes.data);
-    if (summariesRes.data) setSummaries(summariesRes.data);
-    if (logsRes.data) setLogs(logsRes.data);
-    setLoading(false);
+      if (settingsRes.data?.mochi_prompt) setMochiPrompt(settingsRes.data.mochi_prompt);
+      if (profilesRes.data) setProfiles(profilesRes.data);
+      if (vibeRes.data) setRelationship(vibeRes.data);
+      if (summariesRes.data) setSummaries(summariesRes.data);
+      if (logsRes.data) setLogs(logsRes.data);
+    } catch (e) {
+      console.error('Failed to load mochi settings:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const savePrompt = async () => {

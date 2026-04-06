@@ -411,6 +411,14 @@ export async function POST(req: Request) {
   try {
     const { text, userId, userName, currentScreen } = await req.json();
 
+    // 入力検証
+    if (!text || typeof text !== 'string') {
+      return NextResponse.json({ error: 'Invalid text' }, { status: 400 });
+    }
+    if (!['user_a', 'user_b'].includes(userId)) {
+      return NextResponse.json({ error: 'Invalid userId' }, { status: 400 });
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       await insertMochiMessage("APIキーが未設定のため、お返事できませんでした🍡");
       return NextResponse.json({ success: true, fake: true });

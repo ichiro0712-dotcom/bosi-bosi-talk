@@ -19,11 +19,12 @@ type Message = {
 type Announcement = { id: number; message_id: number; text: string; user_id: string; created_by: string };
 
 function renderTextWithLinks(text: string) {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
+  const splitRegex = /(https?:\/\/[^\s]+)/g;
+  const testRegex = /^https?:\/\//;
+  const parts = text.split(splitRegex);
   return (
     <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4', fontWeight: 500, letterSpacing: '0.02em' }}>
-      {parts.map((part, i) => urlRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" style={{color:'inherit', textDecoration:'underline'}}>{part}</a> : part)}
+      {parts.map((part, i) => testRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" style={{color:'inherit', textDecoration:'underline'}}>{part}</a> : part)}
     </div>
   );
 }

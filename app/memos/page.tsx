@@ -56,7 +56,7 @@ export default function MemoPage() {
     saveTimerRef.current = setTimeout(() => {
       const id = editingIdRef.current;
       if (!id) return;
-      supabase.from('memos').update({ title, content, updated_at: new Date().toISOString() }).eq('id', id).then();
+      supabase.from('memos').update({ title, content, updated_at: new Date().toISOString() }).eq('id', id).then(({ error }) => { if (error) console.error('Auto-save failed:', error); });
     }, 1000);
   };
 

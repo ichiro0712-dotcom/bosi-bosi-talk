@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import webPush from 'web-push';
 
-// Vercel Cron から呼ばれることを想定
 export async function GET(request: Request) {
-  // 自動実行や手動実行のための認証チェック（今回はCronから呼ばれる想定でシンプルに）
-  // 実際にはリクエストヘッダーで Authorization Bearer CRON_SECRET 等をチェックします。
-  
+  // Vercel Cron認証チェック
+  const authHeader = request.headers.get('authorization');
+  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
