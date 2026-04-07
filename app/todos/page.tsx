@@ -16,6 +16,8 @@ type Todo = {
   status: string;
   sort_order: number;
   created_by: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type Reminder = {
@@ -108,8 +110,13 @@ export default function TodosPage() {
   };
 
   const parents = todos.filter(t => !t.parent_id);
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  // Taskタブ: 進行中 + 完了後1週間以内（最近完了したものはまだ見える）
   const activeTasks = parents.filter(t => t.status !== 'done');
-  const doneTasks = parents.filter(t => t.status === 'done');
+  const recentlyDone = parents.filter(t => t.status === 'done' && new Date(t.updated_at || t.created_at).getTime() > oneWeekAgo);
+  const taskTabItems = [...activeTasks, ...recentlyDone];
+  // 完了Taskタブ: 完了後1週間以上経過
+  const doneTasks = parents.filter(t => t.status === 'done' && new Date(t.updated_at || t.created_at).getTime() <= oneWeekAgo);
   const children = (pid: string) => todos.filter(t => t.parent_id === pid);
 
   // ===== Task CRUD =====
@@ -437,7 +444,7 @@ export default function TodosPage() {
   if (!myProfile) return null;
 
   const tabs = [
-    { id: 'tasks' as const, label: 'Task', count: activeTasks.length },
+    { id: 'tasks' as const, label: 'Task', count: taskTabItems.length },
     { id: 'reminders' as const, label: 'リマインダー', count: reminders.filter(r => r.is_active).length },
     { id: 'done' as const, label: '完了Task', count: doneTasks.length },
   ];
@@ -479,12 +486,12 @@ export default function TodosPage() {
                 {AddForm({})}
               </div>
             )}
-            {activeTasks.length === 0 && !showAdd ? (
+            {taskTabItems.length === 0 && !showAdd ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
                 <p style={{ fontSize: '0.95rem', marginBottom: '6px' }}>タスクがありません</p>
                 <p style={{ fontSize: '0.78rem' }}>右上の「＋タスク」から追加</p>
               </div>
-            ) : activeTasks.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)}
+            ) : taskTabItems.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)}
           </>
         )}
 
