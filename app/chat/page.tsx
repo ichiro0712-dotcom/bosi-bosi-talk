@@ -72,8 +72,9 @@ export default function ChatApp() {
     if (saved) { try { setLocalDeleted(new Set(JSON.parse(saved))); } catch {} }
   }, []);
 
-  const isInitialLoad = useRef(true);
+  const hasScrolledInitial = useRef(false);
   const isNearBottom = useRef(true);
+  const prevMsgCount = useRef(0);
 
   // スクロール位置の追跡
   useEffect(() => {
@@ -89,13 +90,21 @@ export default function ChatApp() {
 
   // メッセージ変更時のスクロール
   useEffect(() => {
-    if (isInitialLoad.current) {
-      // 初回: 一瞬で最下部（アニメーションなし）
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
-      isInitialLoad.current = false;
-    } else if (isNearBottom.current) {
-      // 最下部付近にいる場合のみスムーズスクロール
+    if (messages.length === 0) return; // データ未到着
+
+    if (!hasScrolledInitial.current) {
+      // 初回データ到着: 一瞬で最下部（アニメーションなし）
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      });
+      hasScrolledInitial.current = true;
+      prevMsgCount.current = messages.length;
+    } else if (messages.length > prevMsgCount.current && isNearBottom.current) {
+      // 新着メッセージ + 最下部付近にいる場合のみスムーズスクロール
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      prevMsgCount.current = messages.length;
+    } else {
+      prevMsgCount.current = messages.length;
     }
   }, [messages]);
 
