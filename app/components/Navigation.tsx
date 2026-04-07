@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MessageCircle, Image as ImageIcon, FileText, LogOut, MoreVertical, Download, Bell, Home, Heart, CheckSquare } from 'lucide-react';
+import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
 const AnniversaryModal = dynamic(() => import('./AnniversaryModal'), { ssr: false });
@@ -13,6 +14,23 @@ export default function Navigation() {
   const [showMenu, setShowMenu] = useState(false);
   const [isAnniversaryMenuOpen, setIsAnniversaryMenuOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [hasUnread, setHasUnread] = useState(false);
+
+  // 未読チェック（チャット画面以外の時）
+  useEffect(() => {
+    const profile = localStorage.getItem('boshi_profile');
+    if (!profile) return;
+
+    const checkUnread = async () => {
+      if (pathname === '/chat') { setHasUnread(false); return; }
+      const { count } = await supabase.from('messages').select('id', { count: 'exact', head: true }).eq('is_read', false).neq('user_id', profile);
+      setHasUnread((count || 0) > 0);
+    };
+
+    checkUnread();
+    const interval = setInterval(checkUnread, 10000); // 10秒ごと
+    return () => clearInterval(interval);
+  }, [pathname]);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -64,7 +82,7 @@ export default function Navigation() {
 
   const navItems = [
     { name: 'HOME', href: '/', icon: Home },
-    { name: 'チャット', href: '/chat', icon: MessageCircle },
+    { name: 'チャット', href: '/chat', icon: MessageCircle, badge: hasUnread },
     { name: 'アルバム', href: 'https://photos.app.goo.gl/U7nscr2zKsxzYZrd6', icon: ImageIcon, external: true },
     { name: 'TODO', href: '/todos', icon: CheckSquare },
     { name: 'メモ', href: '/memos', icon: FileText },
@@ -82,9 +100,10 @@ export default function Navigation() {
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const linkContent = (
-              <div className={`nav-item ${isActive ? 'active' : ''}`}>
+              <div className={`nav-item ${isActive ? 'active' : ''}`} style={{ position: 'relative' }}>
                 <item.icon size={20} />
                 {item.name ? <span style={{ fontWeight: 600 }}>{item.name}</span> : null}
+                {(item as any).badge && <div style={{ position: 'absolute', top: '6px', right: '6px', width: '8px', height: '8px', borderRadius: '50%', background: '#f43f5e' }} />}
               </div>
             );
 
@@ -144,9 +163,10 @@ export default function Navigation() {
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const linkContent = (
-            <div className={`bottom-nav-item ${isActive ? 'active' : ''}`}>
+            <div className={`bottom-nav-item ${isActive ? 'active' : ''}`} style={{ position: 'relative' }}>
               <item.icon size={24} />
               {item.name ? <span style={{ fontSize: '0.75rem', fontWeight: 600, marginTop: '4px' }}>{item.name}</span> : null}
+              {(item as any).badge && <div style={{ position: 'absolute', top: '4px', right: 'calc(50% - 16px)', width: '8px', height: '8px', borderRadius: '50%', background: '#f43f5e' }} />}
             </div>
           );
 

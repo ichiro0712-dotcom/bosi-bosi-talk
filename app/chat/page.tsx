@@ -72,9 +72,32 @@ export default function ChatApp() {
     if (saved) { try { setLocalDeleted(new Set(JSON.parse(saved))); } catch {} }
   }, []);
 
+  const isInitialLoad = useRef(true);
+  const isNearBottom = useRef(true);
+
+  // スクロール位置の追跡
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, previewImage]);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      isNearBottom.current = scrollHeight - scrollTop - clientHeight < 150;
+    };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // メッセージ変更時のスクロール
+  useEffect(() => {
+    if (isInitialLoad.current) {
+      // 初回: 一瞬で最下部（アニメーションなし）
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      isInitialLoad.current = false;
+    } else if (isNearBottom.current) {
+      // 最下部付近にいる場合のみスムーズスクロール
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) setPushStatus(Notification.permission);
