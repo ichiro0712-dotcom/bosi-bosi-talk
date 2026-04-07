@@ -208,20 +208,62 @@ export default function ChatApp() {
     }
   }, [myProfile, formatMsg]);
 
-  // 画面が見えるようになったら未読を既読にする
+  // 画面が見えるようになったら: 未読を既読にする + メッセージをリフレッシュ
   useEffect(() => {
-    const handleVisible = () => {
-      if (document.visibilityState === 'visible' && myProfile) {
-        supabase.from('messages').select('id').eq('is_read', false).neq('user_id', myProfile).then(({ data }) => {
-          if (data && data.length > 0) {
-            supabase.from('messages').update({ is_read: true }).in('id', data.map(m => m.id)).then();
-          }
-        });
+    if (!myProfile) return;
+    const handleVisible = async () => {
+      if (document.visibilityState === 'visible') {
+        // メッセージをDBからリフレッシュ（Realtimeが途切れていた場合のフォールバック）
+        const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(30);
+        if (data) {
+          const sorted = data.reverse();
+          setMessages(prev => {
+            let updated = [...prev.filter(m => m.id.toString().startsWith('temp_') || m.id.toString().startsWith('err_'))];
+            for (const m of sorted) {
+              const existing = prev.find(p => p.id === m.id);
+              updated.push(existing ? { ...existing, is_read: m.is_read, is_deleted: m.is_deleted } : formatMsg(m, myProfile));
+            }
+            return updated;
+          });
+          // 未読を既読にする
+          const unread = sorted.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
+          if (unread.length > 0) supabase.from('messages').update({ is_read: true }).in('id', unread).then();
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisible);
     return () => document.removeEventListener('visibilitychange', handleVisible);
-  }, [myProfile]);
+  }, [myProfile, formatMsg]);
+
+  // ポーリングフォールバック: 15秒ごとに新着確認（Realtime障害対策）
+  useEffect(() => {
+    if (!myProfile) return;
+    const interval = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(5);
+      if (data) {
+        const sorted = data.reverse();
+        setMessages(prev => {
+          let changed = false;
+          const updated = [...prev];
+          for (const m of sorted) {
+            if (!updated.find(p => p.id === m.id)) {
+              updated.push(formatMsg(m, myProfile));
+              changed = true;
+            }
+            // 既読状態の更新
+            const existing = updated.find(p => p.id === m.id);
+            if (existing && existing.is_read !== m.is_read) {
+              Object.assign(existing, { is_read: m.is_read });
+              changed = true;
+            }
+          }
+          return changed ? [...updated] : prev;
+        });
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [myProfile, formatMsg]);
 
   // ===== ジャンプ & ハイライト =====
   const jumpToMessage = (msgId: number) => {

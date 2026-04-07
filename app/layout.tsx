@@ -8,6 +8,7 @@ export const metadata: Metadata = {
 };
 
 import Navigation from './components/Navigation';
+import PushSubscriber from './components/PushSubscriber';
 
 export default function RootLayout({
   children,
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body>
+        <PushSubscriber />
         <div className="app-container">
           <Navigation />
           <div className="main-content-area">
