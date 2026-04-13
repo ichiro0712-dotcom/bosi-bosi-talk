@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, ChevronDown, ChevronRight, Trash2, Check, X, Bell, BellOff } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Trash2, Check, X, Bell, BellOff, Edit2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 
 // ===== Types =====
@@ -15,6 +15,7 @@ type Todo = {
   due_date: string | null;
   status: string;
   sort_order: number;
+  mochi_reminders?: number[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -29,6 +30,17 @@ type Reminder = {
   is_active: boolean;
   created_by?: string;
 };
+
+interface EditingTodo {
+  id: string | null;
+  parent_id: string | null;
+  title: string;
+  description: string;
+  assignee: string;
+  due_date: string;
+  status: string;
+  mochi_reminders: number[];
+}
 
 // ===== Constants =====
 
@@ -55,21 +67,15 @@ export default function TodosPage() {
   // Tasks
   const [todos, setTodos] = useState<Todo[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editDesc, setEditDesc] = useState('');
-
-  // Add task form
-  const [showAdd, setShowAdd] = useState(false);
-  const [addParent, setAddParent] = useState<string | null>(null);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newAssignee, setNewAssignee] = useState('both');
-  const [newDue, setNewDue] = useState('');
+  
+  // Modals state
+  const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
+  const [editingTodo, setEditingTodo] = useState<EditingTodo | null>(null);
 
   // Reminders
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [showReminderAdd, setShowReminderAdd] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [editReminderId, setEditReminderId] = useState<string | null>(null);
   const [rMsg, setRMsg] = useState('');
   const [rType, setRType] = useState<'once' | 'daily' | 'weekly' | 'monthly'>('daily');
   const [rDate, setRDate] = useState('');
@@ -78,7 +84,6 @@ export default function TodosPage() {
   const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth'>('date');
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
-  const [editReminderId, setEditReminderId] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('boshi_profile');
@@ -86,19 +91,15 @@ export default function TodosPage() {
     else window.location.href = '/';
   }, []);
 
-  const editIdRef = useRef<string | null>(null);
-  useEffect(() => { editIdRef.current = editId; }, [editId]);
-
   useEffect(() => {
     if (!myProfile) return;
     fetchAll();
     const ch1 = supabase.channel('todos-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => {
-      // 編集中はRealtimeでfetchしない（フォーカス飛び防止）
-      if (!editIdRef.current) fetchTodos();
+      if (!isTodoModalOpen) fetchTodos();
     }).subscribe();
     const ch2 = supabase.channel('reminders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_reminders' }, () => fetchReminders()).subscribe();
     return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
-  }, [myProfile]);
+  }, [myProfile, isTodoModalOpen]);
 
   const fetchAll = () => { fetchTodos(); fetchReminders(); };
   const fetchTodos = async () => {
@@ -112,50 +113,60 @@ export default function TodosPage() {
 
   const parents = todos.filter(t => !t.parent_id);
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  // Taskタブ: 進行中 + 完了後1週間以内（最近完了したものはまだ見える）
   const activeTasks = parents.filter(t => t.status !== 'done');
   const recentlyDone = parents.filter(t => t.status === 'done' && new Date(t.updated_at || t.created_at).getTime() > oneWeekAgo);
   const taskTabItems = [...activeTasks, ...recentlyDone];
-  // 完了Taskタブ: 完了後1週間以上経過
   const doneTasks = parents.filter(t => t.status === 'done' && new Date(t.updated_at || t.created_at).getTime() <= oneWeekAgo);
   const children = (pid: string) => todos.filter(t => t.parent_id === pid);
 
   // ===== Task CRUD =====
 
-  const addTask = async (parentId: string | null = null) => {
-    if (!newTitle.trim()) return;
-    const { error } = await supabase.from('todos').insert([{
-      title: newTitle.trim(), description: newDesc.trim() || null,
-      parent_id: parentId, assignee: newAssignee,
-      due_date: newDue || null, status: 'not_started', created_by: myProfile,
-    }]);
-    if (error) { alert('エラー: ' + error.message); return; }
-    setNewTitle(''); setNewDesc(''); setNewDue(''); setNewAssignee('both');
-    setShowAdd(false); setAddParent(null);
-    if (parentId) setExpanded(prev => new Set(prev).add(parentId));
-    await fetchTodos();
+  const openTodoModal = (t?: Todo, parentId?: string | null) => {
+    if (t) {
+      setEditingTodo({
+        id: t.id, parent_id: t.parent_id, title: t.title, description: t.description || '',
+        assignee: t.assignee, due_date: t.due_date || '', status: t.status, mochi_reminders: t.mochi_reminders || []
+      });
+    } else {
+      setEditingTodo({
+        id: null, parent_id: parentId || null, title: '', description: '',
+        assignee: 'both', due_date: '', status: 'not_started', mochi_reminders: []
+      });
+    }
+    setIsTodoModalOpen(true);
   };
 
-  const saveEdit = async (id: string) => {
-    if (!editTitle.trim()) return;
-    await supabase.from('todos').update({ title: editTitle.trim(), description: editDesc.trim() || null, updated_at: new Date().toISOString() }).eq('id', id);
-    editIdRef.current = null;
-    setEditId(null);
+  const saveTodo = async () => {
+    if (!editingTodo?.title.trim()) return;
+    const { id, parent_id, title, description, assignee, due_date, status, mochi_reminders } = editingTodo;
+    if (id) {
+       await supabase.from('todos').update({ 
+         title: title.trim(), description: description.trim() || null, 
+         assignee, due_date: due_date || null, status, mochi_reminders, updated_at: new Date().toISOString() 
+       }).eq('id', id);
+    } else {
+       await supabase.from('todos').insert([{ 
+         title: title.trim(), description: description.trim() || null, 
+         parent_id, assignee, due_date: due_date || null, status: 'not_started', mochi_reminders, created_by: myProfile 
+       }]);
+       if (parent_id) setExpanded(prev => new Set(prev).add(parent_id));
+    }
+    setIsTodoModalOpen(false);
+    setEditingTodo(null);
     await fetchTodos();
-  };
-
-  const setStatus = async (id: string, status: string) => {
-    await supabase.from('todos').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
-    // ローカルstateを即時更新（fetchせずDOM安定）
-    setTodos(prev => prev.map(t => t.id === id ? { ...t, status } : t));
   };
 
   const deleteTask = async (id: string, title: string) => {
     const kids = children(id);
-    if (!confirm(kids.length > 0 ? `「${title}」と小タスク${kids.length}件を削除？` : `「${title}」を削除？`)) return;
+    if (!confirm(kids.length > 0 ? `「${title}」と小タスク${kids.length}件を削除しますか？` : `「${title}」を削除しますか？`)) return;
     await supabase.from('todos').delete().eq('id', id); await fetchTodos();
   };
 
+  // Immediate update toggles from Card
+  const setStatus = async (id: string, status: string) => {
+    await supabase.from('todos').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+  };
   const setAssignee = async (id: string, v: string) => {
     await supabase.from('todos').update({ assignee: v, updated_at: new Date().toISOString() }).eq('id', id);
     setTodos(prev => prev.map(t => t.id === id ? { ...t, assignee: v } : t));
@@ -164,6 +175,7 @@ export default function TodosPage() {
     await supabase.from('todos').update({ due_date: v || null, updated_at: new Date().toISOString() }).eq('id', id);
     setTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: v || null } : t));
   };
+
 
   // ===== Reminder CRUD =====
 
@@ -221,9 +233,9 @@ export default function TodosPage() {
       // もちに通知
       const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
       await supabase.from('messages').insert([{ text: `${name}さんがリマインダー「${rMsg.trim()}」を追加しました。`, user_id: 'mochi' }]);
-      setShowReminderAdd(false);
     }
 
+    setIsReminderModalOpen(false);
     setRMsg(''); await fetchReminders();
   };
 
@@ -242,7 +254,7 @@ export default function TodosPage() {
     if (detail.dayOfWeek) setRDay(detail.dayOfWeek);
     if (detail.dayOfMonth) setRDayOfMonth(detail.dayOfMonth);
     if (detail.nthWeek) setRNthWeek(detail.nthWeek);
-    setShowReminderAdd(false);
+    setIsReminderModalOpen(true);
   };
 
   const toggleReminder = async (id: string, active: boolean) => {
@@ -261,6 +273,191 @@ export default function TodosPage() {
     return { done: kids.filter(c => c.status === 'done').length, total: kids.length };
   };
 
+  const TodoModal = () => {
+    if (!isTodoModalOpen || !editingTodo) return null;
+    const update = (key: keyof EditingTodo, val: any) => setEditingTodo({ ...editingTodo, [key]: val });
+    const toggleMoRemind = (days: number) => {
+       const m = editingTodo.mochi_reminders;
+       if (m.includes(days)) update('mochi_reminders', m.filter(d => d !== days).sort((a,b)=>b-a));
+       else update('mochi_reminders', [...m, days].sort((a,b)=>b-a));
+    };
+    const addFreeRemind = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+         const v = Number(e.currentTarget.value);
+         if (!isNaN(v) && v > 0 && !editingTodo.mochi_reminders.includes(v)) {
+           update('mochi_reminders', [...editingTodo.mochi_reminders, v].sort((a,b)=>b-a));
+         }
+         e.currentTarget.value = '';
+      }
+    };
+
+    return (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+        <div className="animate-slide-up" style={{ background: 'white', width: '90%', maxWidth: '440px', maxHeight: '90vh', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Check size={20} color="#9370db" /> {editingTodo.id ? 'Taskの編集' : '新しいTask'}
+            </h3>
+            <button onClick={() => setIsTodoModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={22} /></button>
+          </div>
+          <div style={{ padding: '20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>タイトル</label>
+              <input value={editingTodo.title} onChange={e => update('title', e.target.value)} placeholder={editingTodo.parent_id ? "小タスク名" : "タスク名"} autoFocus
+                style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.95rem', outline: 'none' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>メモ</label>
+              <textarea value={editingTodo.description} onChange={e => update('description', e.target.value)} placeholder="詳細内容など（任意）"
+                style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.85rem', minHeight: '80px', resize: 'vertical', outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '120px' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>担当</label>
+                <select value={editingTodo.assignee} onChange={e => update('assignee', e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', outline: 'none', background: 'white' }}>
+                  <option value="both">2人</option><option value="user_a">ミルク</option><option value="user_b">メリー</option>
+                </select>
+              </div>
+              <div style={{ flex: 1, minWidth: '140px' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>期限</label>
+                <input type="date" value={editingTodo.due_date} onChange={e => update('due_date', e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', outline: 'none' }} />
+              </div>
+            </div>
+            {editingTodo.id && (
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>ステータス</label>
+                <select value={editingTodo.status} onChange={e => update('status', e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', outline: 'none', background: STATUS[editingTodo.status as keyof typeof STATUS]?.bg, color: STATUS[editingTodo.status as keyof typeof STATUS]?.color, fontWeight: 700 }}>
+                  {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+            )}
+            
+            {/* もちリマインド */}
+            {editingTodo.due_date && (
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  🍡 もちリマインド
+                </label>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '12px' }}>期限の〇日前に、もちがチャットでお知らせするもち！</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                  {[1, 3, 7].map(d => (
+                    <button key={d} onClick={() => toggleMoRemind(d)} style={{
+                      padding: '8px 14px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: '1px solid',
+                      borderColor: editingTodo.mochi_reminders.includes(d) ? '#9370db' : '#cbd5e1',
+                      background: editingTodo.mochi_reminders.includes(d) ? '#f0ebff' : 'white',
+                      color: editingTodo.mochi_reminders.includes(d) ? '#9370db' : '#64748b', cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}>
+                      {d}日前
+                    </button>
+                  ))}
+                  {editingTodo.mochi_reminders.filter(d => ![1,3,7].includes(d)).map(d => (
+                    <button key={d} onClick={() => toggleMoRemind(d)} style={{ padding: '8px 14px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: '1px solid #9370db', background: '#f0ebff', color: '#9370db', cursor: 'pointer', transition: 'all 0.2s' }}>
+                      {d}日前
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'white', padding: '8px 12px', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+                  <input type="number" placeholder="日数" onKeyDown={addFreeRemind} min={1} style={{ width: '60px', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', outline: 'none' }} />
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>日前を追加 (Enter)</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{ padding: '16px 20px', borderTop: '1px solid #e2e8f0', background: 'white', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+            <button onClick={() => setIsTodoModalOpen(false)} style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}>キャンセル</button>
+            <button onClick={saveTodo} style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', background: '#9370db', color: 'white', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>保存</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ReminderForm = ({ isEdit = false, targetId = undefined }: { isEdit?: boolean, targetId?: string }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <input value={rMsg} onChange={e => setRMsg(e.target.value)} placeholder="リマインダーの内容"
+        autoFocus style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.95rem', background: 'white', outline: 'none' }} />
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => (
+          <button key={t} onClick={() => setRType(t)} style={{
+            padding: '8px 16px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer',
+            background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b', transition: '0.2s'
+          }}>
+            {t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : '毎月'}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {rType === 'once' && (
+          <input type="date" value={rDate} onChange={e => setRDate(e.target.value)}
+            style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }} />
+        )}
+        {rType === 'weekly' && (
+          <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
+            style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+            {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜日</option>)}
+          </select>
+        )}
+        {rType === 'monthly' && (
+          <>
+            <select value={rMonthlyMode} onChange={e => setRMonthlyMode(e.target.value as 'date' | 'nth')}
+              style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+              <option value="date">毎月○日</option><option value="nth">第N曜日</option>
+            </select>
+            {rMonthlyMode === 'date' ? (
+              <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
+                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
+              </select>
+            ) : (
+              <>
+                <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
+                  style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                  {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
+                </select>
+                <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
+                  style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                  {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
+                </select>
+              </>
+            )}
+          </>
+        )}
+        <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
+          style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }} />
+      </div>
+
+      <div style={{ padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+        <button onClick={() => { setIsReminderModalOpen(false); setEditReminderId(null); }} style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}>キャンセル</button>
+        <button onClick={() => saveReminder(targetId)} style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', background: '#9370db', color: 'white', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>{isEdit ? '保存' : '追加'}</button>
+      </div>
+    </div>
+  );
+
+  const ReminderModal = () => {
+    if (!isReminderModalOpen) return null;
+    return (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+        <div className="animate-slide-up" style={{ background: 'white', width: '90%', maxWidth: '440px', maxHeight: '90vh', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Bell size={20} color="#9370db" /> {editReminderId ? 'リマインダー編集' : '新しいリマインダー'}
+            </h3>
+            <button onClick={() => { setIsReminderModalOpen(false); setEditReminderId(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={22} /></button>
+          </div>
+          <div style={{ padding: '24px', overflowY: 'auto' }}>
+            <ReminderForm isEdit={!!editReminderId} targetId={editReminderId || undefined} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const TaskCard = ({ todo, isChild = false }: { todo: Todo; isChild?: boolean }) => {
     const isDone = todo.status === 'done';
     const kids = children(todo.id);
@@ -268,11 +465,9 @@ export default function TodosPage() {
     const prog = progress(todo.id);
     const st = STATUS[todo.status as keyof typeof STATUS] || STATUS.not_started;
     const overdue = todo.due_date && !isDone && new Date(todo.due_date) < new Date(new Date().toDateString());
-    const editing = editId === todo.id;
     const assigneeLabel = todo.assignee === 'user_a' ? 'ミルク' : todo.assignee === 'user_b' ? 'メリー' : '2人';
     const dueDateLabel = todo.due_date ? new Date(todo.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : '期限なし';
 
-    // 期限バッジ判定
     let urgencyBadge: { label: string; color: string; bg: string } | null = null;
     if (todo.due_date && !isDone) {
       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -292,220 +487,88 @@ export default function TodosPage() {
     return (
       <div>
         <div style={{
-          padding: '12px 14px', marginLeft: isChild ? '20px' : 0,
+          padding: '14px 16px', marginLeft: isChild ? '20px' : 0,
           borderLeft: isChild ? '3px solid #e2e8f0' : 'none',
           background: isDone ? 'rgba(248,250,252,0.8)' : 'rgba(255,255,255,0.85)',
-          borderRadius: isChild ? '0 14px 14px 0' : '14px',
-          marginBottom: '6px', border: isChild ? 'none' : '1px solid rgba(0,0,0,0.06)',
-          opacity: isDone ? 0.5 : 1, boxShadow: isChild ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
+          borderRadius: isChild ? '0 14px 14px 0' : '16px',
+          marginBottom: '8px', border: isChild ? 'none' : '1px solid rgba(0,0,0,0.06)',
+          opacity: isDone ? 0.5 : 1, boxShadow: isChild ? 'none' : '0 2px 6px rgba(0,0,0,0.03)',
         }}>
           {/* Row 1 (top): meta chips + delete */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-            {/* 展開ボタン */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
             {!isChild && kids.length > 0 ? (
               <button onClick={() => { const n = new Set(expanded); isOpen ? n.delete(todo.id) : n.add(todo.id); setExpanded(n); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex', flexShrink: 0 }}>
-                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </button>
-            ) : !isChild ? <div style={{ width: 14 }} /> : null}
+            ) : !isChild ? <div style={{ width: 16 }} /> : null}
 
-            {/* 小タスク追加（親のみ） */}
             {!isChild && (
-              <button onClick={() => { setAddParent(todo.id); setShowAdd(true); setExpanded(prev => new Set(prev).add(todo.id)); }}
+              <button onClick={() => { openTodoModal(undefined, todo.id); setExpanded(prev => new Set(prev).add(todo.id)); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: 0, display: 'flex', flexShrink: 0 }} title="小タスク追加">
-                <Plus size={13} />
+                <Plus size={15} />
               </button>
             )}
 
-            {/* メタ情報チップ（編集モードでselect/input、通常モードでタップ可能ラベル） */}
-            {editing ? (
-              <>
-                <select value={todo.assignee} onChange={e => setAssignee(todo.id, e.target.value)}
-                  style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 600 }}>
-                  <option value="user_a">ミルク</option><option value="user_b">メリー</option><option value="both">2人</option>
-                </select>
-                <input type="date" value={todo.due_date || ''} onChange={e => setDue(todo.id, e.target.value)}
-                  style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: `1px solid ${overdue ? '#fca5a5' : '#e2e8f0'}`, background: overdue ? '#fef2f2' : 'white', color: overdue ? '#dc2626' : '#64748b' }} />
-                <select value={todo.status} onChange={e => setStatus(todo.id, e.target.value)}
-                  style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '10px', border: 'none', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer' }}>
-                  {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-                {urgencyBadge && (
-                  <span style={{ fontSize: '0.6rem', padding: '2px 7px', borderRadius: '8px', background: urgencyBadge.bg, color: urgencyBadge.color, fontWeight: 700, flexShrink: 0 }}>
-                    {urgencyBadge.label}
-                  </span>
-                )}
-              </>
-            ) : (
-              <>
-                <span onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
-                  style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: '#f8fafc', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}>
-                  {assigneeLabel}
-                </span>
-                <span onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
-                  style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: overdue ? '#fef2f2' : '#f8fafc', color: overdue ? '#dc2626' : '#64748b', fontWeight: 600, cursor: 'pointer' }}>
-                  {dueDateLabel}
-                </span>
-                <span onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
-                  style={{ fontSize: '0.63rem', padding: '2px 8px', borderRadius: '10px', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer' }}>
-                  {st.label}
-                </span>
-                {urgencyBadge && (
-                  <span style={{ fontSize: '0.6rem', padding: '2px 7px', borderRadius: '8px', background: urgencyBadge.bg, color: urgencyBadge.color, fontWeight: 700 }}>
-                    {urgencyBadge.label}
-                  </span>
-                )}
-              </>
+            <span onClick={() => openTodoModal(todo)} style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: '8px', background: '#f8fafc', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}>
+              {assigneeLabel}
+            </span>
+            <span onClick={() => openTodoModal(todo)} style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: '8px', background: overdue ? '#fef2f2' : '#f8fafc', color: overdue ? '#dc2626' : '#64748b', fontWeight: 600, cursor: 'pointer' }}>
+              {dueDateLabel}
+            </span>
+            <select value={todo.status} onChange={e => setStatus(todo.id, e.target.value)}
+              style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: '8px', border: 'none', background: st.bg, color: st.color, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+              {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+            {urgencyBadge && (
+              <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '8px', background: urgencyBadge.bg, color: urgencyBadge.color, fontWeight: 700 }}>
+                {urgencyBadge.label}
+              </span>
+            )}
+            {todo.mochi_reminders && todo.mochi_reminders.length > 0 && (
+              <span style={{ fontSize: '0.65rem', padding: '3px 6px', borderRadius: '8px', background: '#f0ebff', color: '#9370db', fontWeight: 700 }}>
+                🍡
+              </span>
             )}
 
             <div style={{ flex: 1 }} />
 
-            {/* プログレスバー */}
             {prog && (
-              <div style={{ width: '36px', height: '4px', background: '#f1f5f9', borderRadius: '2px', overflow: 'hidden', flexShrink: 0 }}>
-                <div style={{ height: '100%', width: `${(prog.done / prog.total) * 100}%`, background: '#9370db', borderRadius: '2px', transition: 'width 0.3s' }} />
+              <div style={{ width: '40px', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden', flexShrink: 0 }}>
+                <div style={{ height: '100%', width: `${(prog.done / prog.total) * 100}%`, background: '#9370db', borderRadius: '3px', transition: 'width 0.3s' }} />
               </div>
             )}
 
-            {/* 削除 */}
             <button onClick={() => deleteTask(todo.id, todo.title)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e2e8f0', padding: 0, flexShrink: 0 }}>
-              <Trash2 size={13} />
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e2e8f0', padding: 0, flexShrink: 0, marginLeft: '6px' }}>
+              <Trash2 size={16} />
             </button>
           </div>
 
           {/* Row 2 (bottom): title */}
-          {editing ? (
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              <input value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveEdit(todo.id)}
-                autoFocus style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.88rem', background: 'white', fontWeight: 600 }} />
-              <button onClick={() => saveEdit(todo.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
-              <button onClick={() => setEditId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
-            </div>
-          ) : (
-            <div onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
-              style={{ cursor: 'pointer', fontSize: '0.92rem', fontWeight: 600, color: isDone ? '#94a3b8' : 'var(--text-main)', textDecoration: isDone ? 'line-through' : 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+            <div onClick={() => openTodoModal(todo)}
+              style={{ cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600, color: isDone ? '#94a3b8' : 'var(--text-main)', textDecoration: isDone ? 'line-through' : 'none', lineHeight: 1.4, flex: 1 }}>
               {todo.title}
+              {todo.description && (
+                <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: '#64748b', lineHeight: 1.5, textDecoration: 'none', whiteSpace: 'pre-wrap' }}>
+                  {todo.description}
+                </p>
+              )}
             </div>
-          )}
-
-          {/* Description */}
-          {editing ? (
-            <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="メモ（任意）"
-              style={{ width: '100%', marginTop: '8px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', resize: 'vertical', minHeight: '44px', background: 'white', color: 'var(--text-main)' }} />
-          ) : todo.description ? (
-            <p onClick={() => { setEditId(todo.id); setEditTitle(todo.title); setEditDesc(todo.description || ''); }}
-              style={{ margin: '6px 0 0', fontSize: '0.76rem', color: '#64748b', lineHeight: 1.45, cursor: 'pointer', whiteSpace: 'pre-wrap' }}>
-              {todo.description}
-            </p>
-          ) : null}
+            <button onClick={() => openTodoModal(todo)} style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '4px' }}>
+              <Edit2 size={15} />
+            </button>
+          </div>
         </div>
 
         {/* Children */}
         {!isChild && isOpen && kids.map(c => <React.Fragment key={c.id}>{TaskCard({ todo: c, isChild: true })}</React.Fragment>)}
-        {!isChild && isOpen && addParent === todo.id && showAdd && (
-          <div style={{ marginLeft: '20px', padding: '10px 16px', borderLeft: '3px solid #e2e8f0', marginBottom: '6px' }}>
-            {AddForm({ parentId: todo.id })}
-          </div>
-        )}
       </div>
     );
   };
 
-  const AddForm = ({ parentId = null }: { parentId?: string | null }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder={parentId ? "小タスク" : "新しいタスク"}
-        autoFocus onKeyDown={e => e.key === 'Enter' && addTask(parentId)}
-        style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.88rem', background: 'white' }} />
-      <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="メモ（任意）"
-        style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white', resize: 'vertical', minHeight: '36px' }} />
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={newAssignee} onChange={e => setNewAssignee(e.target.value)}
-          style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.78rem', background: 'white' }}>
-          <option value="both">2人</option><option value="user_a">ミルク</option><option value="user_b">メリー</option>
-        </select>
-        <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)}
-          style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.78rem', background: 'white' }} />
-        <div style={{ flex: 1 }} />
-        <button onClick={() => addTask(parentId)} style={{ background: '#9370db', color: 'white', padding: '7px 18px', borderRadius: '10px', fontWeight: 600, fontSize: '0.8rem' }}>追加</button>
-        <button onClick={() => { setShowAdd(false); setAddParent(null); setNewTitle(''); setNewDesc(''); }}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={18} /></button>
-      </div>
-    </div>
-  );
-
-  const ReminderForm = ({ isEdit = false, targetId = undefined }: { isEdit?: boolean, targetId?: string }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <input value={rMsg} onChange={e => setRMsg(e.target.value)} placeholder="リマインダーの内容"
-        autoFocus style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.88rem', background: 'white' }} />
-
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-        {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => (
-          <button key={t} onClick={() => setRType(t)} style={{
-            padding: '6px 14px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b'
-          }}>
-            {t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : '毎月'}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {rType === 'once' && (
-          <input type="date" value={rDate} onChange={e => setRDate(e.target.value)}
-            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }} />
-        )}
-        {rType === 'weekly' && (
-          <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
-            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-            {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜日</option>)}
-          </select>
-        )}
-        {rType === 'monthly' && (
-          <>
-            <select value={rMonthlyMode} onChange={e => setRMonthlyMode(e.target.value as 'date' | 'nth')}
-              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-              <option value="date">毎月○日</option><option value="nth">第N曜日</option>
-            </select>
-            {rMonthlyMode === 'date' ? (
-              <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
-                style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
-              </select>
-            ) : (
-              <>
-                <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
-                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                  {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
-                </select>
-                <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
-                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                  {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
-                </select>
-              </>
-            )}
-          </>
-        )}
-        <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
-          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }} />
-      </div>
-
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-        <button onClick={() => isEdit ? setEditReminderId(null) : setShowReminderAdd(false)} style={{ padding: '7px 16px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>キャンセル</button>
-        <button onClick={() => saveReminder(targetId)} style={{ padding: '7px 18px', borderRadius: '10px', border: 'none', background: '#9370db', color: 'white', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>{isEdit ? '保存' : '追加'}</button>
-      </div>
-    </div>
-  );
-
   const ReminderCard = ({ r }: { r: Reminder }) => {
-    if (editReminderId === r.id) {
-      return (
-        <div style={{ background: 'rgba(255,255,255,0.9)', padding: '16px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)', marginBottom: '6px' }}>
-          <ReminderForm isEdit={true} targetId={r.id} />
-        </div>
-      );
-    }
-
     const typeLabel = SCHEDULE_LABELS[r.schedule_type] || r.schedule_type;
     const detail = r.schedule_detail || {};
     let scheduleDesc = typeLabel;
@@ -516,25 +579,28 @@ export default function TodosPage() {
 
     return (
       <div style={{
-        padding: '14px 16px', background: r.is_active ? 'rgba(255,255,255,0.85)' : 'rgba(248,250,252,0.7)',
-        borderRadius: '14px', marginBottom: '6px', border: '1px solid rgba(0,0,0,0.06)',
-        opacity: r.is_active ? 1 : 0.5, boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+        padding: '16px', background: r.is_active ? 'rgba(255,255,255,0.85)' : 'rgba(248,250,252,0.7)',
+        borderRadius: '16px', marginBottom: '8px', border: '1px solid rgba(0,0,0,0.06)',
+        opacity: r.is_active ? 1 : 0.5, boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button onClick={() => toggleReminder(r.id, r.is_active)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: r.is_active ? '#9370db' : '#cbd5e1', padding: 0, flexShrink: 0 }}>
-            {r.is_active ? <Bell size={18} /> : <BellOff size={18} />}
+            {r.is_active ? <Bell size={20} /> : <BellOff size={20} />}
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div onClick={() => startEditReminder(r)} style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{r.message}</div>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ background: '#f0ebff', color: '#9370db', padding: '1px 8px', borderRadius: '6px', fontWeight: 600 }}>{scheduleDesc}</span>
+            <div onClick={() => startEditReminder(r)} style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{r.message}</div>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ background: '#f0ebff', color: '#9370db', padding: '2px 10px', borderRadius: '8px', fontWeight: 600 }}>{scheduleDesc}</span>
               <span>次回: {new Date(r.next_run_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               {r.created_by && <span>{r.created_by === 'user_a' ? 'ミルク' : 'メリー'}</span>}
             </div>
           </div>
-          <button onClick={() => deleteReminder(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e2e8f0', padding: 0, flexShrink: 0 }}>
-            <Trash2 size={14} />
+          <button onClick={() => startEditReminder(r)} style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '4px' }}>
+            <Edit2 size={16} />
+          </button>
+          <button onClick={() => deleteReminder(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e2e8f0', padding: 0, flexShrink: 0, marginLeft: '6px' }}>
+            <Trash2 size={16} />
           </button>
         </div>
       </div>
@@ -551,12 +617,15 @@ export default function TodosPage() {
 
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-gradient)' }}>
+      {<TodoModal />}
+      {<ReminderModal />}
+      
       {/* Header */}
-      <div style={{ padding: '14px 20px', background: 'var(--glass-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>TODO / リマインダー</h1>
-        <button onClick={() => { tab === 'reminders' ? setShowReminderAdd(true) : (() => { setShowAdd(true); setAddParent(null); })(); }}
-          style={{ background: '#9370db', color: 'white', padding: '7px 14px', borderRadius: '10px', fontWeight: 600, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Plus size={15} /> {tab === 'reminders' ? 'リマインダー' : 'Task'}
+      <div style={{ padding: '16px 20px', background: 'var(--glass-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '-0.5px' }}>TODO / リマインダー</h1>
+        <button onClick={() => { tab === 'reminders' ? (() => { setIsReminderModalOpen(true); setRMsg(''); })() : openTodoModal(); }}
+          style={{ background: '#9370db', color: 'white', padding: '8px 16px', borderRadius: '12px', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>
+          <Plus size={16} /> {tab === 'reminders' ? 'リマインダー' : 'Task'}
         </button>
       </div>
 
@@ -564,59 +633,44 @@ export default function TodosPage() {
       <div style={{ display: 'flex', padding: '0 20px', background: 'var(--glass-bg)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            flex: 1, padding: '12px 0', border: 'none', background: 'none', cursor: 'pointer',
+            flex: 1, padding: '14px 0', border: 'none', background: 'none', cursor: 'pointer',
             borderBottom: tab === t.id ? '2px solid #9370db' : '2px solid transparent',
-            color: tab === t.id ? '#9370db' : '#94a3b8', fontWeight: tab === t.id ? 700 : 600,
-            fontSize: '0.8rem', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+            color: tab === t.id ? '#9370db' : '#94a3b8', fontWeight: tab === t.id ? 800 : 600,
+            fontSize: '0.85rem', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
           }}>
             {t.label}
-            {t.count > 0 && <span style={{ fontSize: '0.65rem', background: tab === t.id ? '#f0ebff' : '#f1f5f9', color: tab === t.id ? '#9370db' : '#94a3b8', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>{t.count}</span>}
+            {t.count > 0 && <span style={{ fontSize: '0.7rem', background: tab === t.id ? '#f0ebff' : '#f1f5f9', color: tab === t.id ? '#9370db' : '#94a3b8', padding: '2px 8px', borderRadius: '8px', fontWeight: 800 }}>{t.count}</span>}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
-
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
         {/* ===== Tasks Tab ===== */}
         {tab === 'tasks' && (
-          <>
-            {showAdd && addParent === null && (
-              <div style={{ background: 'rgba(255,255,255,0.9)', padding: '14px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)', marginBottom: '10px' }}>
-                {AddForm({})}
-              </div>
-            )}
-            {taskTabItems.length === 0 && !showAdd ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
-                <p style={{ fontSize: '0.95rem', marginBottom: '6px' }}>タスクがありません</p>
-                <p style={{ fontSize: '0.78rem' }}>右上の「＋タスク」から追加</p>
-              </div>
-            ) : taskTabItems.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)}
-          </>
+          taskTabItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
+              <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '8px' }}>タスクがありません</p>
+              <p style={{ fontSize: '0.8rem' }}>右上の「＋Task」から追加</p>
+            </div>
+          ) : taskTabItems.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)
         )}
 
         {/* ===== Reminders Tab ===== */}
         {tab === 'reminders' && (
-          <>
-            {showReminderAdd && (
-              <div style={{ background: 'rgba(255,255,255,0.9)', padding: '16px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)', marginBottom: '10px' }}>
-                <ReminderForm />
-              </div>
-            )}
-            {reminders.length === 0 && !showReminderAdd ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
-                <p style={{ fontSize: '0.95rem', marginBottom: '6px' }}>リマインダーがありません</p>
-                <p style={{ fontSize: '0.78rem' }}>右上の「＋リマインダー」から追加</p>
-              </div>
-            ) : reminders.map(r => <ReminderCard key={r.id} r={r} />)}
-          </>
+          reminders.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
+              <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '8px' }}>リマインダーがありません</p>
+              <p style={{ fontSize: '0.8rem' }}>右上の「＋リマインダー」から追加</p>
+            </div>
+          ) : reminders.map(r => <ReminderCard key={r.id} r={r} />)
         )}
 
         {/* ===== Done Tab ===== */}
         {tab === 'done' && (
           doneTasks.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>
-              <p style={{ fontSize: '0.95rem' }}>完了したタスクはありません</p>
+              <p style={{ fontSize: '1rem', fontWeight: 600 }}>完了したタスクはありません</p>
             </div>
           ) : doneTasks.map(t => <React.Fragment key={t.id}>{TaskCard({ todo: t })}</React.Fragment>)
         )}

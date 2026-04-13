@@ -56,31 +56,73 @@ export async function GET(request: Request) {
 
     const messages: string[] = [];
 
-    // ===== 毎朝9:00〜9:59: 今日期限のタスクがあれば通知 =====
+    // ===== 毎朝9:00〜9:59: 今日期限 & もちリマインド該当タスクの通知 =====
     if (jstHour >= 9 && jstHour < 10) {
-      const { data: todayTodos } = await supabase
+      const { data: activeTodos } = await supabase
         .from('todos')
-        .select('title')
-        .eq('due_date', todayStr)
-        .neq('status', 'done');
+        .select('title, due_date, mochi_reminders')
+        .neq('status', 'done')
+        .not('due_date', 'is', null);
 
-      if (todayTodos && todayTodos.length > 0) {
-        const list = todayTodos.map(t => `・${t.title}`).join('\n');
+      if (activeTodos && activeTodos.length > 0) {
+        const todayStrLocal = jstNow.toISOString().split('T')[0];
+        const dueTodayList: string[] = [];
+        const remindList: { title: string, daysLeft: number }[] = [];
 
-        if (process.env.GEMINI_API_KEY) {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
-          const prompt = settings?.mochi_prompt || 'あなたは「もち」です。';
+        for (const t of activeTodos) {
+          if (t.due_date === todayStrLocal) {
+            dueTodayList.push(`・${t.title}`);
+          } else if (t.mochi_reminders && Array.isArray(t.mochi_reminders) && t.mochi_reminders.length > 0) {
+            const due = new Date(t.due_date);
+            due.setHours(0, 0, 0, 0);
+            const todayDate = new Date(jstNow);
+            todayDate.setHours(0, 0, 0, 0);
+            const diffDays = Math.floor((due.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays > 0 && t.mochi_reminders.includes(diffDays)) {
+              remindList.push({ title: t.title, daysLeft: diffDays });
+            }
+          }
+        }
 
-          const res = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: [{ text: `今日期限のタスクがあるよ。キャラを崩さず「今日はこれやる予定だけど大丈夫？」的な感じで声をかけて。タスク一覧:\n${list}` }] }],
-            config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 300 }
-          });
-          const reply = res.text?.trim();
-          if (reply) messages.push(reply);
-        } else {
-          messages.push(`今日期限のタスクがあるよ！\n${list}\n大丈夫かな？🍡`);
+        // 今日期限のプロンプト
+        if (dueTodayList.length > 0) {
+          const listStr = dueTodayList.join('\n');
+          if (process.env.GEMINI_API_KEY) {
+            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
+            const prompt = settings?.mochi_prompt || 'あなたは「もち」です。';
+
+            const res = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: [{ role: 'user', parts: [{ text: `今日期限のタスクがあるよ。キャラを崩さず「今日はこれやる予定だけど大丈夫？」的な感じで声をかけて。タスク一覧:\n${listStr}` }] }],
+              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 300 }
+            });
+            const reply = res.text?.trim();
+            if (reply) messages.push(reply);
+          } else {
+            messages.push(`今日期限のタスクがあるよ！\n${listStr}\n大丈夫かな？🍡`);
+          }
+        }
+
+        // もちリマインドのプロンプト
+        if (remindList.length > 0) {
+          const rListStr = remindList.map(r => `・${r.title} (完了まであと${r.daysLeft}日)`).join('\n');
+          if (process.env.GEMINI_API_KEY) {
+            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
+            const prompt = settings?.mochi_prompt || 'あなたは「もち」です。';
+
+            const res = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: [{ role: 'user', parts: [{ text: `以下のタスクが期限に近づいているよ（もちリマインド設定）。キャラを崩さず「完了まであと●日だけど順調だもちか？」的に声をかけて。タスク一覧:\n${rListStr}` }] }],
+              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 300 }
+            });
+            const reply = res.text?.trim();
+            if (reply) messages.push(reply);
+          } else {
+            messages.push(`タスクの期限が近づいてるもち！\n${rListStr}\n順調だもちか？🍡`);
+          }
         }
       }
     }
