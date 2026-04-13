@@ -91,7 +91,7 @@ export async function GET(request: Request) {
           if (process.env.GEMINI_API_KEY) {
             const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
             const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
-            const prompt = settings?.mochi_prompt || 'あなたは「もち」です。';
+            const prompt = settings?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
 
             const res = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
@@ -111,7 +111,7 @@ export async function GET(request: Request) {
           if (process.env.GEMINI_API_KEY) {
             const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
             const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
-            const prompt = settings?.mochi_prompt || 'あなたは「もち」です。';
+            const prompt = settings?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
 
             const res = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
@@ -127,13 +127,16 @@ export async function GET(request: Request) {
       }
     }
 
-    // ===== 毎週月曜10:00〜10:59: 今週のタスク一覧 =====
+    // ===== 毎週月曜10:00〜10:59: 先週の振り返り & 今週のタスク一覧 =====
     if (jstDay === 1 && jstHour >= 10 && jstHour < 11) {
       const endOfWeek = new Date(now);
       endOfWeek.setDate(endOfWeek.getDate() + (7 - endOfWeek.getDay()));
       const endJst = new Date(endOfWeek.getTime() + 9 * 60 * 60 * 1000);
       const endStr = endJst.toISOString().split('T')[0];
 
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      // 今週のタスク
       const { data: weekTodos } = await supabase
         .from('todos')
         .select('title, due_date, assignee')
@@ -141,28 +144,53 @@ export async function GET(request: Request) {
         .or(`due_date.is.null,due_date.lte.${endStr}`)
         .is('parent_id', null);
 
-      if (weekTodos && weekTodos.length > 0) {
-        const list = weekTodos.map(t => {
-          const who = t.assignee === 'user_a' ? 'ミルク' : t.assignee === 'user_b' ? 'メリー' : '2人';
-          const due = t.due_date ? `(${new Date(t.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })})` : '';
-          return `・${t.title} ${due} [${who}]`;
-        }).join('\n');
+      // 先週完了したタスク
+      const { data: doneTodos } = await supabase.from('todos').select('title').eq('status', 'done').gte('updated_at', weekAgo);
+      
+      // 先週追加されたリマインダー
+      const { data: newReminders } = await supabase.from('scheduled_reminders').select('message').gte('created_at', weekAgo);
+      
+      // 直近のチャット（文脈用、最大30件）
+      const { data: recentMsgs } = await supabase.from('messages').select('text, user_id').neq('user_id', 'mochi').gte('created_at', weekAgo).order('created_at', { ascending: false }).limit(30);
 
-        if (process.env.GEMINI_API_KEY) {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
-          const prompt = settings?.mochi_prompt || 'あなたは「もち」です。';
+      const list = weekTodos && weekTodos.length > 0 ? weekTodos.map(t => {
+        const who = t.assignee === 'user_a' ? 'ミルク' : t.assignee === 'user_b' ? 'メリー' : '2人';
+        const due = t.due_date ? `(${new Date(t.due_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })})` : '';
+        return `・${t.title} ${due} [${who}]`;
+      }).join('\n') : '（今週のタスクは特に登録されてないもち！）';
 
-          const res = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: [{ text: `月曜日だよ！今週のタスク一覧をキャラを崩さず伝えてね。タスク:\n${list}` }] }],
-            config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 400 }
-          });
-          const reply = res.text?.trim();
-          if (reply) messages.push(reply);
-        } else {
-          messages.push(`月曜日だもち！今週はこれをやるんだね！\n${list}\nがんばろう🍡`);
-        }
+      const doneList = doneTodos && doneTodos.length > 0 ? doneTodos.map(t => `・${t.title}`).join('\n') : '（特になし）';
+      const remindList = newReminders && newReminders.length > 0 ? newReminders.map(r => `・${r.message}`).join('\n') : '（特になし）';
+      const chatLog = recentMsgs && recentMsgs.length > 0 ? recentMsgs.reverse().map(m => `${m.user_id === 'user_a' ? 'ミルク' : 'メリー'}: ${m.text || '(スタンプ/画像)'}`).join('\n') : '（特になし）';
+
+      if (process.env.GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const { data: settings } = await supabase.from('couple_settings').select('mochi_prompt').limit(1).single();
+        const prompt = settings?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
+
+        const textPrompt = `今日は月曜日だよ！以下の「先週の振り返り」データを読んで、ミルクとメリーのラブラブな2人をねぎらい、楽しかったエピソードなどに触れつつ、今週のタスク一覧を提示して元気に挨拶してね。
+
+【先週完了したタスク】
+${doneList}
+
+【先週新しく追加されたリマインダー】
+${remindList}
+
+【先週の2人のチャットの様子 (抜粋)】
+${chatLog}
+
+【今週のタスク一覧】
+${list}`;
+
+        const res = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
+          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 600 }
+        });
+        const reply = res.text?.trim();
+        if (reply) messages.push(reply);
+      } else {
+        messages.push(`月曜日だもち！今週はこれをやるんだね！\n${list}\nがんばろう🍡`);
       }
     }
 

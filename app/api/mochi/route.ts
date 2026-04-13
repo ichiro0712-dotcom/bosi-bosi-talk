@@ -529,7 +529,7 @@ export async function POST(req: Request) {
       supabase.from('memos').select('id, title, content').order('updated_at', { ascending: false }).limit(10)
     ]);
 
-    const characterPrompt = settings.data?.mochi_prompt || 'あなたは「もち」というサポーターボットです。丁寧語を使わずに親しみやすく話してください。';
+    const characterPrompt = settings.data?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
 
     // 記念日情報の組み立て
     let anniversaryInfo = '';
