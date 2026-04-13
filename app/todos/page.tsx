@@ -451,7 +451,7 @@ export default function TodosPage() {
             <button onClick={() => { setIsReminderModalOpen(false); setEditReminderId(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={22} /></button>
           </div>
           <div style={{ padding: '24px', overflowY: 'auto' }}>
-            <ReminderForm isEdit={!!editReminderId} targetId={editReminderId || undefined} />
+            {ReminderForm({ isEdit: !!editReminderId, targetId: editReminderId || undefined })}
           </div>
         </div>
       </div>
@@ -617,8 +617,8 @@ export default function TodosPage() {
 
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-gradient)' }}>
-      {<TodoModal />}
-      {<ReminderModal />}
+      {TodoModal()}
+      {ReminderModal()}
       
       {/* Header */}
       <div style={{ padding: '16px 20px', background: 'var(--glass-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -663,7 +663,7 @@ export default function TodosPage() {
               <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '8px' }}>リマインダーがありません</p>
               <p style={{ fontSize: '0.8rem' }}>右上の「＋リマインダー」から追加</p>
             </div>
-          ) : reminders.map(r => <ReminderCard key={r.id} r={r} />)
+          ) : reminders.map(r => <React.Fragment key={r.id}>{ReminderCard({ r })}</React.Fragment>)
         )}
 
         {/* ===== Done Tab ===== */}
