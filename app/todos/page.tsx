@@ -78,6 +78,7 @@ export default function TodosPage() {
   const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth'>('date');
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
+  const [editReminderId, setEditReminderId] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('boshi_profile');
@@ -166,7 +167,7 @@ export default function TodosPage() {
 
   // ===== Reminder CRUD =====
 
-  const addReminder = async () => {
+  const saveReminder = async (id?: string) => {
     if (!rMsg.trim() || !rTime) return alert('メッセージと時間は必須です');
     if (rType === 'once' && !rDate) return alert('日付を入力してください');
 
@@ -203,17 +204,45 @@ export default function TodosPage() {
       }
     }
 
-    const { error } = await supabase.from('scheduled_reminders').insert([{
-      message: rMsg.trim(), schedule_type: finalType, schedule_detail: detail,
-      next_run_at: nextRun.toISOString(), is_active: true, created_by: myProfile || 'unknown'
-    }]);
-    if (error) { alert('エラー: ' + error.message); return; }
+    if (id) {
+      const { error } = await supabase.from('scheduled_reminders').update({
+        message: rMsg.trim(), schedule_type: finalType, schedule_detail: detail,
+        next_run_at: nextRun.toISOString()
+      }).eq('id', id);
+      if (error) { alert('エラー: ' + error.message); return; }
+      setEditReminderId(null);
+    } else {
+      const { error } = await supabase.from('scheduled_reminders').insert([{
+        message: rMsg.trim(), schedule_type: finalType, schedule_detail: detail,
+        next_run_at: nextRun.toISOString(), is_active: true, created_by: myProfile || 'unknown'
+      }]);
+      if (error) { alert('エラー: ' + error.message); return; }
 
-    // もちに通知
-    const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
-    await supabase.from('messages').insert([{ text: `${name}さんがリマインダー「${rMsg.trim()}」を追加しました。`, user_id: 'mochi' }]);
+      // もちに通知
+      const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
+      await supabase.from('messages').insert([{ text: `${name}さんがリマインダー「${rMsg.trim()}」を追加しました。`, user_id: 'mochi' }]);
+      setShowReminderAdd(false);
+    }
 
-    setRMsg(''); setShowReminderAdd(false); await fetchReminders();
+    setRMsg(''); await fetchReminders();
+  };
+
+  const startEditReminder = (r: Reminder) => {
+    setEditReminderId(r.id);
+    setRMsg(r.message);
+    const detail = r.schedule_detail || {};
+    if (r.schedule_type === 'monthly_date' || r.schedule_type === 'monthly_nth') {
+      setRType('monthly');
+      setRMonthlyMode(r.schedule_type === 'monthly_date' ? 'date' : 'nth');
+    } else {
+      setRType(r.schedule_type as any);
+    }
+    if (detail.time) setRTime(detail.time);
+    if (r.schedule_type === 'once' && r.next_run_at) setRDate(r.next_run_at.split('T')[0]);
+    if (detail.dayOfWeek) setRDay(detail.dayOfWeek);
+    if (detail.dayOfMonth) setRDayOfMonth(detail.dayOfMonth);
+    if (detail.nthWeek) setRNthWeek(detail.nthWeek);
+    setShowReminderAdd(false);
   };
 
   const toggleReminder = async (id: string, active: boolean) => {
@@ -405,7 +434,78 @@ export default function TodosPage() {
     </div>
   );
 
+  const ReminderForm = ({ isEdit = false, targetId = undefined }: { isEdit?: boolean, targetId?: string }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <input value={rMsg} onChange={e => setRMsg(e.target.value)} placeholder="リマインダーの内容"
+        autoFocus style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.88rem', background: 'white' }} />
+
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => (
+          <button key={t} onClick={() => setRType(t)} style={{
+            padding: '6px 14px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 600, border: 'none', cursor: 'pointer',
+            background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b'
+          }}>
+            {t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : '毎月'}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {rType === 'once' && (
+          <input type="date" value={rDate} onChange={e => setRDate(e.target.value)}
+            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }} />
+        )}
+        {rType === 'weekly' && (
+          <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
+            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
+            {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜日</option>)}
+          </select>
+        )}
+        {rType === 'monthly' && (
+          <>
+            <select value={rMonthlyMode} onChange={e => setRMonthlyMode(e.target.value as 'date' | 'nth')}
+              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
+              <option value="date">毎月○日</option><option value="nth">第N曜日</option>
+            </select>
+            {rMonthlyMode === 'date' ? (
+              <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
+                style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
+                {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
+              </select>
+            ) : (
+              <>
+                <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
+                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
+                  {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
+                </select>
+                <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
+                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
+                  {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
+                </select>
+              </>
+            )}
+          </>
+        )}
+        <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
+          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }} />
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <button onClick={() => isEdit ? setEditReminderId(null) : setShowReminderAdd(false)} style={{ padding: '7px 16px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>キャンセル</button>
+        <button onClick={() => saveReminder(targetId)} style={{ padding: '7px 18px', borderRadius: '10px', border: 'none', background: '#9370db', color: 'white', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>{isEdit ? '保存' : '追加'}</button>
+      </div>
+    </div>
+  );
+
   const ReminderCard = ({ r }: { r: Reminder }) => {
+    if (editReminderId === r.id) {
+      return (
+        <div style={{ background: 'rgba(255,255,255,0.9)', padding: '16px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)', marginBottom: '6px' }}>
+          <ReminderForm isEdit={true} targetId={r.id} />
+        </div>
+      );
+    }
+
     const typeLabel = SCHEDULE_LABELS[r.schedule_type] || r.schedule_type;
     const detail = r.schedule_detail || {};
     let scheduleDesc = typeLabel;
@@ -426,7 +526,7 @@ export default function TodosPage() {
             {r.is_active ? <Bell size={18} /> : <BellOff size={18} />}
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message}</div>
+            <div onClick={() => startEditReminder(r)} style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{r.message}</div>
             <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               <span style={{ background: '#f0ebff', color: '#9370db', padding: '1px 8px', borderRadius: '6px', fontWeight: 600 }}>{scheduleDesc}</span>
               <span>次回: {new Date(r.next_run_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
@@ -500,67 +600,7 @@ export default function TodosPage() {
           <>
             {showReminderAdd && (
               <div style={{ background: 'rgba(255,255,255,0.9)', padding: '16px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <input value={rMsg} onChange={e => setRMsg(e.target.value)} placeholder="リマインダーの内容"
-                    autoFocus style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.88rem', background: 'white' }} />
-
-                  {/* Schedule chips */}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => (
-                      <button key={t} onClick={() => setRType(t)} style={{
-                        padding: '6px 14px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 600, border: 'none', cursor: 'pointer',
-                        background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b'
-                      }}>
-                        {t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : '毎月'}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {rType === 'once' && (
-                      <input type="date" value={rDate} onChange={e => setRDate(e.target.value)}
-                        style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }} />
-                    )}
-                    {rType === 'weekly' && (
-                      <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
-                        style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                        {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜日</option>)}
-                      </select>
-                    )}
-                    {rType === 'monthly' && (
-                      <>
-                        <select value={rMonthlyMode} onChange={e => setRMonthlyMode(e.target.value as 'date' | 'nth')}
-                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                          <option value="date">毎月○日</option><option value="nth">第N曜日</option>
-                        </select>
-                        {rMonthlyMode === 'date' ? (
-                          <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
-                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                            {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
-                          </select>
-                        ) : (
-                          <>
-                            <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
-                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                              {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
-                            </select>
-                            <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
-                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }}>
-                              {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
-                            </select>
-                          </>
-                        )}
-                      </>
-                    )}
-                    <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
-                      style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', background: 'white' }} />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                    <button onClick={() => setShowReminderAdd(false)} style={{ padding: '7px 16px', borderRadius: '10px', border: 'none', background: '#f1f5f9', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>キャンセル</button>
-                    <button onClick={addReminder} style={{ padding: '7px 18px', borderRadius: '10px', border: 'none', background: '#9370db', color: 'white', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>追加</button>
-                  </div>
-                </div>
+                <ReminderForm />
               </div>
             )}
             {reminders.length === 0 && !showReminderAdd ? (

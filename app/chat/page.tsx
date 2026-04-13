@@ -206,16 +206,19 @@ export default function ChatApp() {
             const msg = formatMsg(newMsg, myProfile);
             setMessages(prev => {
               if (prev.find(p => p.id === newMsg.id)) return prev;
-              // tempメッセージ置換: 同じ送信者 + テキスト一致 or 画像送信（テキスト空）
-              const withoutTemp = prev.filter(m => {
-                if (!m.id.toString().startsWith('temp_')) return true;
-                if (m.user_id !== newMsg.user_id) return true;
-                // テキスト一致 or 両方画像（テキスト空同士）
-                if (m.text === newMsg.text) return false;
-                if (!m.text && !newMsg.text && m.imageUrl && newMsg.image_url) return false;
-                return true;
+              const updated = [...prev];
+              // tempメッセージを1つだけ探して置換: 同じ送信者 + テキスト一致 or 画像送信（テキスト空）
+              const tempIdx = updated.findIndex(m => {
+                if (!m.id.toString().startsWith('temp_')) return false;
+                if (m.user_id !== newMsg.user_id) return false;
+                if (m.text === newMsg.text && m.text !== '') return true;
+                if (!m.text && !newMsg.text && m.imageUrl && newMsg.image_url) return true;
+                return false;
               });
-              return [...withoutTemp, msg];
+              if (tempIdx !== -1) {
+                updated.splice(tempIdx, 1);
+              }
+              return [...updated, msg];
             });
             // 画面がアクティブな時のみ既読にする
             if (newMsg.user_id !== myProfile && !newMsg.is_read && document.visibilityState === 'visible') {
@@ -250,12 +253,26 @@ export default function ChatApp() {
         if (data) {
           const sorted = data.reverse();
           setMessages(prev => {
-            let updated = [...prev.filter(m => m.id.toString().startsWith('temp_') || m.id.toString().startsWith('err_'))];
+            let updated = [...prev];
             for (const m of sorted) {
-              const existing = prev.find(p => p.id === m.id);
-              updated.push(existing ? { ...existing, is_read: m.is_read, is_deleted: m.is_deleted } : formatMsg(m, myProfile));
+              if (!updated.find(p => p.id === m.id)) {
+                // DBの新しいメッセージを入れる前に、対応するtempがあれば1つ消す
+                const tempIdx = updated.findIndex(p => {
+                  if (!p.id.toString().startsWith('temp_')) return false;
+                  if (p.user_id !== m.user_id) return false;
+                  if (p.text === m.text && p.text !== '') return true;
+                  if (!p.text && !m.text && p.imageUrl && m.image_url) return true;
+                  return false;
+                });
+                if (tempIdx !== -1) updated.splice(tempIdx, 1);
+                updated.push(formatMsg(m, myProfile));
+              } else {
+                const existing = updated.find(p => p.id === m.id);
+                if (existing) { existing.is_read = m.is_read; existing.is_deleted = m.is_deleted; }
+              }
             }
-            return updated;
+            // タイムスタンプ順にソートして自然な並びにする
+            return updated.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
           });
           // 未読を既読にする
           const unread = sorted.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
@@ -280,16 +297,27 @@ export default function ChatApp() {
           const updated = [...prev];
           for (const m of sorted) {
             if (!updated.find(p => p.id === m.id)) {
+              // DBの新しいメッセージを入れる前に、対応するtempがあれば1つ消す
+              const tempIdx = updated.findIndex(p => {
+                if (!p.id.toString().startsWith('temp_')) return false;
+                if (p.user_id !== m.user_id) return false;
+                if (p.text === m.text && p.text !== '') return true;
+                if (!p.text && !m.text && p.imageUrl && m.image_url) return true;
+                return false;
+              });
+              if (tempIdx !== -1) updated.splice(tempIdx, 1);
               updated.push(formatMsg(m, myProfile));
               changed = true;
-            }
-            // 既読状態の更新
-            const existing = updated.find(p => p.id === m.id);
-            if (existing && existing.is_read !== m.is_read) {
-              Object.assign(existing, { is_read: m.is_read });
-              changed = true;
+            } else {
+              // 既読状態などの更新
+              const existing = updated.find(p => p.id === m.id);
+              if (existing && (existing.is_read !== m.is_read || existing.is_deleted !== m.is_deleted)) {
+                Object.assign(existing, { is_read: m.is_read, is_deleted: m.is_deleted });
+                changed = true;
+              }
             }
           }
+          if (changed) updated.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
           return changed ? [...updated] : prev;
         });
       }
@@ -444,10 +472,19 @@ export default function ChatApp() {
                 let updated = [...prev];
                 for (const m of sorted) {
                   if (!updated.find(p => p.id === m.id)) {
+                    // tempがあれば1つ消す
+                    const tempIdx = updated.findIndex(p => {
+                      if (!p.id.toString().startsWith('temp_')) return false;
+                      if (p.user_id !== m.user_id) return false;
+                      if (p.text === m.text && p.text !== '') return true;
+                      if (!p.text && !m.text && p.imageUrl && m.image_url) return true;
+                      return false;
+                    });
+                    if (tempIdx !== -1) updated.splice(tempIdx, 1);
                     updated.push(formatMsg(m, myProfile!));
                   }
                 }
-                return updated;
+                return updated.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
               });
             }
           }, 2000);
