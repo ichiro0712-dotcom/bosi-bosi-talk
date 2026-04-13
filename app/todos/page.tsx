@@ -150,6 +150,10 @@ export default function TodosPage() {
          parent_id, assignee, due_date: due_date || null, status: 'not_started', mochi_reminders, created_by: myProfile 
        }]);
        if (parent_id) setExpanded(prev => new Set(prev).add(parent_id));
+
+       // もちに通知
+       const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
+       await supabase.from('messages').insert([{ text: `${name}さんがTODO「${title.trim()}」を追加しました。`, user_id: 'mochi' }]);
     }
     setIsTodoModalOpen(false);
     setEditingTodo(null);
