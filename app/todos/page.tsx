@@ -292,8 +292,8 @@ export default function TodosPage() {
     };
 
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-        <div className="animate-slide-up" style={{ background: 'white', width: '90%', maxWidth: '440px', maxHeight: '90vh', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', paddingTop: '8vh', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+        <div className="animate-slide-up" style={{ background: 'white', width: '90%', maxWidth: '440px', maxHeight: '85vh', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
             <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Check size={20} color="#9370db" /> {editingTodo.id ? 'Taskの編集' : '新しいTask'}
@@ -344,7 +344,7 @@ export default function TodosPage() {
                 <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '12px' }}>期限の〇日前に、もちがチャットでお知らせするもち！</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                   {[1, 3, 7].map(d => (
-                    <button key={d} onClick={() => toggleMoRemind(d)} style={{
+                    <button type="button" key={d} onClick={(e) => { e.preventDefault(); toggleMoRemind(d); }} style={{
                       padding: '8px 14px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: '1px solid',
                       borderColor: editingTodo.mochi_reminders.includes(d) ? '#9370db' : '#cbd5e1',
                       background: editingTodo.mochi_reminders.includes(d) ? '#f0ebff' : 'white',
@@ -355,7 +355,7 @@ export default function TodosPage() {
                     </button>
                   ))}
                   {editingTodo.mochi_reminders.filter(d => ![1,3,7].includes(d)).map(d => (
-                    <button key={d} onClick={() => toggleMoRemind(d)} style={{ padding: '8px 14px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: '1px solid #9370db', background: '#f0ebff', color: '#9370db', cursor: 'pointer', transition: 'all 0.2s' }}>
+                    <button type="button" key={d} onClick={(e) => { e.preventDefault(); toggleMoRemind(d); }} style={{ padding: '8px 14px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: '1px solid #9370db', background: '#f0ebff', color: '#9370db', cursor: 'pointer', transition: 'all 0.2s' }}>
                       {d}日前
                     </button>
                   ))}
@@ -368,8 +368,8 @@ export default function TodosPage() {
             )}
           </div>
           <div style={{ padding: '16px 20px', borderTop: '1px solid #e2e8f0', background: 'white', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-            <button onClick={() => setIsTodoModalOpen(false)} style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}>キャンセル</button>
-            <button onClick={saveTodo} style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', background: '#9370db', color: 'white', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>保存</button>
+            <button type="button" onClick={() => setIsTodoModalOpen(false)} style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}>キャンセル</button>
+            <button type="button" onClick={saveTodo} style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', background: '#9370db', color: 'white', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>保存</button>
           </div>
         </div>
       </div>
@@ -383,7 +383,7 @@ export default function TodosPage() {
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => (
-          <button key={t} onClick={() => setRType(t)} style={{
+          <button type="button" key={t} onClick={(e) => { e.preventDefault(); setRType(t); }} style={{
             padding: '8px 16px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer',
             background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b', transition: '0.2s'
           }}>
@@ -433,8 +433,8 @@ export default function TodosPage() {
       </div>
 
       <div style={{ padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-        <button onClick={() => { setIsReminderModalOpen(false); setEditReminderId(null); }} style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}>キャンセル</button>
-        <button onClick={() => saveReminder(targetId)} style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', background: '#9370db', color: 'white', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>{isEdit ? '保存' : '追加'}</button>
+        <button type="button" onClick={() => { setIsReminderModalOpen(false); setEditReminderId(null); }} style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' }}>キャンセル</button>
+        <button type="button" onClick={() => saveReminder(targetId)} style={{ padding: '12px 28px', borderRadius: '12px', border: 'none', background: '#9370db', color: 'white', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>{isEdit ? '保存' : '追加'}</button>
       </div>
     </div>
   );
@@ -442,8 +442,8 @@ export default function TodosPage() {
   const ReminderModal = () => {
     if (!isReminderModalOpen) return null;
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-        <div className="animate-slide-up" style={{ background: 'white', width: '90%', maxWidth: '440px', maxHeight: '90vh', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', paddingTop: '8vh', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+        <div className="animate-slide-up" style={{ background: 'white', width: '90%', maxWidth: '440px', maxHeight: '85vh', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
             <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bell size={20} color="#9370db" /> {editReminderId ? 'リマインダー編集' : '新しいリマインダー'}
