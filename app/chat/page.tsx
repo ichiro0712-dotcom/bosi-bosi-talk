@@ -506,11 +506,14 @@ export default function ChatApp() {
   // ===== 長押し =====
   const handleLongPressStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
     if (msg.is_deleted || msg.status === 'sending') return;
-    const target = (e.target as HTMLElement).closest('.msg-bubble');
-    const rect = target ? target.getBoundingClientRect() : null;
     const cx = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const cy = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    longPressTimer.current = setTimeout(() => setContextMenu({ msg, rect, x: cx, y: cy }), 500);
+    longPressTimer.current = setTimeout(() => {
+      // 500ms経過時の正確なDOM要素の位置を再取得
+      const target = document.getElementById(`msg-bubble-${msg.id}`);
+      const rect = target ? target.getBoundingClientRect() : null;
+      setContextMenu({ msg, rect, x: cx, y: cy });
+    }, 500);
   };
   const handleLongPressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
 
@@ -810,7 +813,7 @@ export default function ChatApp() {
                             </div>
                           </div>
                         )}
-                      <div className="msg-bubble" style={{
+                      <div id={`msg-bubble-${msg.id}`} className="msg-bubble" style={{
                         background: bubbleBg,
                         padding: '10px 14px',
                         borderRadius: '18px',
@@ -830,7 +833,7 @@ export default function ChatApp() {
                           <div 
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              const target = (e.target as HTMLElement).closest('.msg-bubble');
+                              const target = document.getElementById(`msg-bubble-${msg.id}`);
                               const rect = target ? target.getBoundingClientRect() : null;
                               setContextMenu({ msg, rect, x: e.clientX, y: e.clientY }); 
                             }}
@@ -848,16 +851,17 @@ export default function ChatApp() {
                       {/* リアクションバッジ */}
                       {typeof msg.id === 'number' && reactions[msg.id] && reactions[msg.id].length > 0 && (
                          <div style={{
-                           display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '-6px', zIndex: 3,
+                           display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px', zIndex: 3,
                            alignSelf: msg.isMine ? 'flex-end' : 'flex-start',
                            marginRight: msg.isMine ? '6px' : '0', marginLeft: msg.isMine ? '0' : '6px'
                          }}>
                            {Object.entries(reactions[msg.id as number].reduce((acc, r) => { acc[r.reaction_id] = (acc[r.reaction_id] || 0) + 1; return acc; }, {} as Record<string, number>)).map(([rid, count]) => {
-                             const isMyReact = reactions[msg.id as number].some((r: Reaction) => r.user_id === myProfile && r.reaction_id === rid);
                              return (
-                                <div key={rid} onClick={() => handleReact(msg.id as number, rid)} style={{ background: isMyReact ? 'rgba(147,112,219,0.1)' : '#fff', border: isMyReact ? '1px solid #9370db' : '1px solid #e2e8f0', borderRadius: '12px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                                   <img src={`/reactions/${rid}.svg`} alt={rid} style={{ width: '16px', height: '16px' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                                   <span style={{ fontSize: '0.65rem', color: isMyReact ? '#9370db' : '#64748b', fontWeight: 600 }}>{count}</span>
+                                <div key={rid} onClick={() => handleReact(msg.id as number, rid)} style={{ background: 'transparent', border: 'none', padding: '0', display: 'flex', alignItems: 'center', cursor: 'pointer', position: 'relative' }}>
+                                   <img src={`/reactions/${rid}.svg`} alt={rid} style={{ width: '32px', height: '32px', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                   {count > 1 && (
+                                     <span style={{ position: 'absolute', bottom: '-2px', right: '-4px', background: '#64748b', color: '#fff', fontSize: '0.65rem', fontWeight: 800, padding: '0 5px', borderRadius: '10px', border: '1.5px solid #fff' }}>{count}</span>
+                                   )}
                                 </div>
                              )
                            })}
@@ -975,22 +979,29 @@ export default function ChatApp() {
             const rect = contextMenu.rect;
             const isTopHalf = rect ? (rect.top < window.innerHeight / 2) : (contextMenu.y < window.innerHeight / 2);
             
-            // Positioning logic based on message bounding client rect
-            const topPos = rect 
-              ? (isTopHalf ? rect.bottom + 8 : rect.top - 200) 
-              : (isTopHalf ? contextMenu.y + 10 : contextMenu.y - 200);
+            // Positioning Logic
+            const styleBase: React.CSSProperties = {
+              position: 'fixed',
+              left: rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 300)) : Math.max(16, Math.min(contextMenu.x, window.innerWidth - 300)),
+              zIndex: 201, 
+              display: 'flex', 
+              flexDirection: isTopHalf ? 'column' : 'column-reverse', 
+              gap: '6px', 
+              alignItems: 'flex-start',
+              animation: 'fadeIn 0.2s ease-out'
+            };
+            
+            if (isTopHalf) {
+              styleBase.top = rect ? rect.bottom + 8 : contextMenu.y + 10;
+            } else {
+              styleBase.bottom = rect ? (window.innerHeight - rect.top) + 8 : (window.innerHeight - contextMenu.y) + 10;
+            }
             
             return (
-              <div style={{
-                position: 'fixed',
-                // Center relative to screen or bubble? Let's align horizontally with the message bubble if possible.
-                left: rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 300)) : Math.min(contextMenu.x, window.innerWidth - 170),
-                top: Math.max(10, Math.min(topPos, window.innerHeight - 220)),
-                zIndex: 201, display: 'flex', flexDirection: isTopHalf ? 'column' : 'column-reverse', gap: '8px', alignItems: 'flex-start'
-              }}>
+              <div style={styleBase}>
                 {/* クイックリアクションバー */}
                 {typeof contextMenu.msg.id === 'number' && !contextMenu.msg.is_deleted && (
-                  <div className="animate-slide-up" style={{ display:'flex', gap:'8px', padding:'10px 16px', background:'#282828', borderRadius:'30px', boxShadow:'0 8px 30px rgba(0,0,0,0.3)', width: 'fit-content' }}>
+                  <div style={{ display:'flex', gap:'8px', padding:'10px 16px', background:'#282828', borderRadius:'30px', boxShadow:'0 8px 30px rgba(0,0,0,0.3)', width: 'fit-content' }}>
                     {recentReactions.map(rid => (
                       <button key={rid} onClick={() => handleReact(contextMenu.msg.id as number, rid)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <img src={`/reactions/${rid}.svg`} alt={rid} style={{width:'34px', height:'34px'}} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -1004,7 +1015,7 @@ export default function ChatApp() {
                 
                 {/* アクションメニューグリッド */}
                 <div style={{
-                  background:'#282828', borderRadius:'16px', padding:'16px', width:'285px',
+                  background:'#282828', borderRadius:'16px', padding:'16px', width:'295px',
                   boxShadow:'0 8px 30px rgba(0,0,0,0.3)'
                 }}>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'18px 8px' }}>
