@@ -6,13 +6,10 @@ if (!fs.existsSync(outDir)) {
   fs.mkdirSync(outDir, { recursive: true });
 }
 
-// 3キャラクター: Mochi, Mary, Milk
-// 各10個の表情・アクション (計30個)
-
 const characters = [
-  { id: 'mochi', baseColor: '#cbd5e1', symbol: '🍡' }, // もち (AI)
-  { id: 'merry', baseColor: '#fbcfe8', symbol: '🎀' }, // メリー
-  { id: 'milk', baseColor: '#bfdbfe', symbol: '🧢' }   // ミルク
+  { id: 'mochi', symbol: '🍡' }, // もち (AI)
+  { id: 'merry', symbol: '🎀' }, // メリー
+  { id: 'milk', symbol: '🧢' }   // ミルク
 ];
 
 const expressions = [
@@ -33,20 +30,17 @@ characters.forEach(char => {
     const fileName = `${char.id}_${exp.suffix}.svg`;
     const filePath = path.join(outDir, fileName);
     
-    // シンプルなSVG: 丸い背景にキャラシンボルと表情絵文字を合成
+    // 背景なしSVG: キャラシンボルと表情絵文字のみ
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-      <!-- Background Circle -->
-      <circle cx="50" cy="50" r="48" fill="${char.baseColor}" stroke="rgba(0,0,0,0.1)" stroke-width="2"/>
-      
       <!-- Character Symbol (Background) -->
-      <text x="35" y="65" font-size="40" text-anchor="middle" dominant-baseline="central" opacity="0.4">${char.symbol}</text>
+      <text x="35" y="65" font-size="45" text-anchor="middle" dominant-baseline="central" opacity="0.8">${char.symbol}</text>
       
       <!-- Expression / Main Emoji -->
-      <text x="60" y="55" font-size="45" text-anchor="middle" dominant-baseline="central">${exp.text}</text>
+      <text x="65" y="45" font-size="55" text-anchor="middle" dominant-baseline="central">${exp.text}</text>
     </svg>`;
     
     fs.writeFileSync(filePath, svg, 'utf-8');
   });
 });
 
-console.log('Successfully generated 30 reaction SVG stamps.');
+console.log('Successfully regenerated 30 transparent reaction SVG stamps.');

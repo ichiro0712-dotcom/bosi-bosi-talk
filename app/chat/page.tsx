@@ -56,7 +56,7 @@ export default function ChatApp() {
   const [pushStatus, setPushStatus] = useState<string>('granted');
   const [isMochiMode, setIsMochiMode] = useState(false);
   const [isMochiTyping, setIsMochiTyping] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ msg: Message; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ msg: Message; rect?: DOMRect | null; x: number; y: number } | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnList, setShowAnnList] = useState(false);
@@ -506,9 +506,11 @@ export default function ChatApp() {
   // ===== 長押し =====
   const handleLongPressStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
     if (msg.is_deleted || msg.status === 'sending') return;
+    const target = (e.target as HTMLElement).closest('.msg-bubble');
+    const rect = target ? target.getBoundingClientRect() : null;
     const cx = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const cy = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    longPressTimer.current = setTimeout(() => setContextMenu({ msg, x: cx, y: cy }), 500);
+    longPressTimer.current = setTimeout(() => setContextMenu({ msg, rect, x: cx, y: cy }), 500);
   };
   const handleLongPressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
 
@@ -808,7 +810,7 @@ export default function ChatApp() {
                             </div>
                           </div>
                         )}
-                      <div style={{
+                      <div className="msg-bubble" style={{
                         background: bubbleBg,
                         padding: '10px 14px',
                         borderRadius: '18px',
@@ -826,7 +828,12 @@ export default function ChatApp() {
                         {/* PCホバー時のリアクション追加ボタン */}
                         {hoveredMsgId === msg.id && typeof msg.id === 'number' && !msg.is_deleted && window.matchMedia('(hover: hover)').matches && (
                           <div 
-                            onClick={(e) => { e.stopPropagation(); setContextMenu({ msg, x: e.clientX, y: e.clientY }); }}
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              const target = (e.target as HTMLElement).closest('.msg-bubble');
+                              const rect = target ? target.getBoundingClientRect() : null;
+                              setContextMenu({ msg, rect, x: e.clientX, y: e.clientY }); 
+                            }}
                             style={{
                               position: 'absolute', top: '4px',
                               [msg.isMine ? 'left' : 'right']: '-36px',
@@ -964,41 +971,60 @@ export default function ChatApp() {
       {contextMenu && (
         <>
           <div style={{ position:'fixed', inset:0, zIndex:200 }} onClick={() => setContextMenu(null)} />
-          <div style={{
-            position:'fixed', left: Math.min(contextMenu.x, window.innerWidth - 170), top: Math.min(contextMenu.y - 10, window.innerHeight - 280),
-            zIndex:201
-          }}>
-            {/* クイックリアクションバー */}
-            {typeof contextMenu.msg.id === 'number' && !contextMenu.msg.is_deleted && (
-              <div className="animate-slide-up" style={{ display:'flex', gap:'8px', padding:'8px 12px', background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'14px', boxShadow:'0 8px 30px rgba(0,0,0,0.15)', border:'1px solid rgba(0,0,0,0.06)', marginBottom:'8px' }}>
-                {recentReactions.map(rid => (
-                  <button key={rid} onClick={() => handleReact(contextMenu.msg.id as number, rid)} style={{ border:'none', padding:0, cursor:'pointer', width:'36px', height:'36px', borderRadius:'18px', background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <img src={`/reactions/${rid}.svg`} alt={rid} style={{width:'26px', height:'26px'}} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                  </button>
-                ))}
-                <button onClick={() => setShowFullReactionPicker(contextMenu.msg.id as number)} style={{ background:'#f1f5f9', border:'none', padding:0, cursor:'pointer', width:'36px', height:'36px', borderRadius:'18px', display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b' }}>
-                  <SmilePlus size={20} />
-                </button>
-              </div>
-            )}
+          {(() => {
+            const rect = contextMenu.rect;
+            const isTopHalf = rect ? (rect.top < window.innerHeight / 2) : (contextMenu.y < window.innerHeight / 2);
             
-            <div style={{
-              background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'14px', padding:'4px', minWidth:'155px',
-              boxShadow:'0 8px 30px rgba(0,0,0,0.15)', border:'1px solid rgba(0,0,0,0.06)'
-            }}>
-              {[
-                { icon: <Reply size={16} />, label: 'リプライ', onClick: () => handleReply(contextMenu.msg) },
-                { icon: <Copy size={16} />, label: 'コピー', onClick: () => handleCopy(contextMenu.msg), show: !!contextMenu.msg.text },
-                { icon: <Megaphone size={16} />, label: 'アナウンス', onClick: () => handleAnnounce(contextMenu.msg), show: !!contextMenu.msg.text && typeof contextMenu.msg.id === 'number' },
-                { icon: <Trash2 size={16} />, label: '送信取り消し', onClick: () => handleUnsend(contextMenu.msg), show: contextMenu.msg.isMine, color: '#dc2626' },
-                { icon: <X size={16} />, label: '削除', onClick: () => handleLocalDelete(contextMenu.msg), color: '#94a3b8' },
-              ].filter(item => item.show !== false).map((item, i) => (
-                <button key={i} onClick={item.onClick} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 14px', background:'none', border:'none', cursor:'pointer', color: item.color || 'var(--text-main)', width:'100%', textAlign:'left', borderRadius:'8px', fontSize:'0.83rem', fontWeight:500 }}>
-                  {item.icon} {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
+            // Positioning logic based on message bounding client rect
+            const topPos = rect 
+              ? (isTopHalf ? rect.bottom + 8 : rect.top - 200) 
+              : (isTopHalf ? contextMenu.y + 10 : contextMenu.y - 200);
+            
+            return (
+              <div style={{
+                position: 'fixed',
+                // Center relative to screen or bubble? Let's align horizontally with the message bubble if possible.
+                left: rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 300)) : Math.min(contextMenu.x, window.innerWidth - 170),
+                top: Math.max(10, Math.min(topPos, window.innerHeight - 220)),
+                zIndex: 201, display: 'flex', flexDirection: isTopHalf ? 'column' : 'column-reverse', gap: '8px', alignItems: 'flex-start'
+              }}>
+                {/* クイックリアクションバー */}
+                {typeof contextMenu.msg.id === 'number' && !contextMenu.msg.is_deleted && (
+                  <div className="animate-slide-up" style={{ display:'flex', gap:'8px', padding:'10px 16px', background:'#282828', borderRadius:'30px', boxShadow:'0 8px 30px rgba(0,0,0,0.3)', width: 'fit-content' }}>
+                    {recentReactions.map(rid => (
+                      <button key={rid} onClick={() => handleReact(contextMenu.msg.id as number, rid)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <img src={`/reactions/${rid}.svg`} alt={rid} style={{width:'34px', height:'34px'}} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      </button>
+                    ))}
+                    <button onClick={() => setShowFullReactionPicker(contextMenu.msg.id as number)} style={{ background:'#3f3f3f', border:'none', padding:0, cursor:'pointer', width:'34px', height:'34px', borderRadius:'17px', display:'flex', alignItems:'center', justifyContent:'center', color:'#d1d5db', marginLeft: '4px' }}>
+                      <SmilePlus size={20} />
+                    </button>
+                  </div>
+                )}
+                
+                {/* アクションメニューグリッド */}
+                <div style={{
+                  background:'#282828', borderRadius:'16px', padding:'16px', width:'285px',
+                  boxShadow:'0 8px 30px rgba(0,0,0,0.3)'
+                }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'18px 8px' }}>
+                    {[
+                      { icon: <Reply size={22} strokeWidth={1.5} />, label: 'リプライ', onClick: () => handleReply(contextMenu.msg) },
+                      { icon: <Copy size={22} strokeWidth={1.5} />, label: 'コピー', onClick: () => handleCopy(contextMenu.msg), show: !!contextMenu.msg.text },
+                      { icon: <Megaphone size={22} strokeWidth={1.5} />, label: 'アナウンス', onClick: () => handleAnnounce(contextMenu.msg), show: !!contextMenu.msg.text && typeof contextMenu.msg.id === 'number' },
+                      { icon: <Trash2 size={22} strokeWidth={1.5} />, label: '送信取消', onClick: () => handleUnsend(contextMenu.msg), show: contextMenu.msg.isMine },
+                      { icon: <X size={22} strokeWidth={1.5} />, label: '削除', onClick: () => handleLocalDelete(contextMenu.msg) },
+                    ].filter(item => item.show !== false).map((item, i) => (
+                      <button key={i} onClick={item.onClick} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'8px', background:'none', border:'none', cursor:'pointer', color:'#f1f5f9', padding:0 }}>
+                        {item.icon}
+                        <span style={{ fontSize:'0.7rem', fontWeight:500, whiteSpace:'nowrap' }}>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 
