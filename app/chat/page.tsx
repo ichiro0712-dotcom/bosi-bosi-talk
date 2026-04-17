@@ -845,27 +845,33 @@ export default function ChatApp() {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start' }}>
                         {/* リプライプレビュー（LINE風・投稿の上にくっつく部分） */}
-                        {(msg.reply_text || msg.reply_to) && (
-                          <div onClick={e => { e.stopPropagation(); if (typeof msg.reply_to === 'number') jumpToMessage(msg.reply_to); }}
-                            style={{
-                              background: 'rgba(0,0,0,0.05)',
-                              padding: '6px 12px 14px 12px',
-                              borderRadius: '14px 14px 0 0',
-                              marginBottom: '-10px',
-                              fontSize: '0.7rem',
-                              cursor: typeof msg.reply_to === 'number' ? 'pointer' : 'default',
-                              color: '#64748b',
-                              maxWidth: '100%',
-                              zIndex: 1
-                            }}>
-                            <div style={{ fontWeight: 700, marginBottom: '2px', color: '#9370db', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <Reply size={12} /> {msg.reply_user || ''}
+                        {/* リプライプレビュー（LINE風・投稿の上にくっつく部分） */}
+                        {(msg.reply_text || msg.reply_to) && (() => {
+                          const originalMsg = typeof msg.reply_to === 'number' ? messages.find(m => m.id === msg.reply_to) : null;
+                          const rUser = msg.reply_user || (originalMsg ? SPEAKER(originalMsg.user_id) : 'メッセージ');
+                          const rText = msg.reply_text || (originalMsg ? (originalMsg.text || '画像') : '読み込み中...');
+                          return (
+                            <div onClick={e => { e.stopPropagation(); if (typeof msg.reply_to === 'number') jumpToMessage(msg.reply_to); }}
+                              style={{
+                                background: 'rgba(0,0,0,0.05)',
+                                padding: '6px 12px 14px 12px',
+                                borderRadius: '14px 14px 0 0',
+                                marginBottom: '-10px',
+                                fontSize: '0.7rem',
+                                cursor: typeof msg.reply_to === 'number' ? 'pointer' : 'default',
+                                color: '#64748b',
+                                maxWidth: '100%',
+                                zIndex: 1
+                              }}>
+                              <div style={{ fontWeight: 700, marginBottom: '2px', color: '#9370db', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Reply size={12} /> {rUser}
+                              </div>
+                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                                {rText}
+                              </div>
                             </div>
-                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
-                              {msg.reply_text || ''}
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       <div id={`msg-bubble-${msg.id}`} className="msg-bubble" style={{
                         background: bubbleBg,
                         padding: '10px 14px',
