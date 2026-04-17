@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Plus, Image as ImageIcon, Smile, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
 const StampCreatorModal = dynamic(() => import('../components/StampCreatorModal'), { ssr: false });
+
+type Reaction = { id: string; message_id: number; user_id: string; reaction_id: string; created_at: string; };
 
 type Message = {
   id: number | string; text: string; isMine: boolean; time: string;
@@ -62,6 +64,10 @@ export default function ChatApp() {
   const [localDeleted, setLocalDeleted] = useState<Set<number | string>>(new Set());
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [reactions, setReactions] = useState<{ [msgId: number]: Reaction[] }>({});
+  const [recentReactions, setRecentReactions] = useState<string[]>(['mochi_smile', 'merry_heart', 'milk_star', 'mochi_good', 'merry_ok']);
+  const [showFullReactionPicker, setShowFullReactionPicker] = useState<number | null>(null);
+  const [hoveredMsgId, setHoveredMsgId] = useState<number | string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -70,11 +76,61 @@ export default function ChatApp() {
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const msgRefs = useRef<Map<number | string, HTMLDivElement>>(new Map());
 
-  // ローカル削除をlocalStorageから復元
+  // ローカル削除とリアクション履歴をlocalStorageから復元
   useEffect(() => {
     const saved = localStorage.getItem('boshi_local_deleted');
     if (saved) { try { setLocalDeleted(new Set(JSON.parse(saved))); } catch {} }
+    const savedReacts = localStorage.getItem('boshi_recent_reactions');
+    if (savedReacts) { try { setRecentReactions(JSON.parse(savedReacts)); } catch {} }
   }, []);
+
+  const handleReact = async (msgId: number, reactionId: string) => {
+    setShowFullReactionPicker(null);
+    setContextMenu(null);
+    if (!myProfile) return;
+    
+    const newRecent = [reactionId, ...recentReactions.filter(r => r !== reactionId)].slice(0, 5);
+    setRecentReactions(newRecent);
+    localStorage.setItem('boshi_recent_reactions', JSON.stringify(newRecent));
+
+    const msgReacts = reactions[msgId] || [];
+    const existing = msgReacts.find(r => r.user_id === myProfile);
+    
+    // 楽観的更新
+    setReactions(prev => {
+      const map = { ...prev };
+      if (!map[msgId]) map[msgId] = [];
+      if (existing && existing.reaction_id === reactionId) {
+        map[msgId] = map[msgId].filter(r => r.id !== existing.id);
+      } else {
+        const tempReact = { id: 'temp_'+Date.now(), message_id: msgId, user_id: myProfile, reaction_id: reactionId, created_at: new Date().toISOString() };
+        map[msgId] = [...map[msgId].filter(r => r.user_id !== myProfile), tempReact];
+      }
+      return map;
+    });
+
+    if (existing && existing.reaction_id === reactionId) {
+      await supabase.from('message_reactions').delete().eq('id', existing.id);
+    } else {
+      await supabase.from('message_reactions').upsert([{ message_id: msgId, user_id: myProfile, reaction_id: reactionId }], { onConflict: 'message_id,user_id' });
+    }
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('boshi_profile');
+    if (saved) setMyProfile(saved); else window.location.href = '/';
+    setIsProfileChecking(false);
+  }, []);
+
+  const formatMsg = useCallback((m: any, myP: string): Message => ({
+    id: m.id, text: m.is_deleted ? '' : m.text, isMine: m.user_id === myP,
+    time: new Date(m.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+    timestamp: new Date(m.created_at).getTime(),
+    dateStr: new Date(m.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
+    imageUrl: m.is_deleted ? undefined : m.image_url, is_read: m.is_read, status: 'sent',
+    user_id: m.user_id, target_user: m.target_user, reply_to: m.reply_to,
+    is_deleted: m.is_deleted, deleted_at: m.deleted_at, created_at_raw: m.created_at,
+  }), []);
 
   const hasScrolledInitial = useRef(false);
   const isNearBottom = useRef(true);
@@ -200,22 +256,6 @@ export default function ChatApp() {
     }
   }, [pushStatus, myProfile]);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('boshi_profile');
-    if (saved) setMyProfile(saved); else window.location.href = '/';
-    setIsProfileChecking(false);
-  }, []);
-
-  const formatMsg = useCallback((m: any, myP: string): Message => ({
-    id: m.id, text: m.is_deleted ? '' : m.text, isMine: m.user_id === myP,
-    time: new Date(m.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: new Date(m.created_at).getTime(),
-    dateStr: new Date(m.created_at).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
-    imageUrl: m.is_deleted ? undefined : m.image_url, is_read: m.is_read, status: 'sent',
-    user_id: m.user_id, target_user: m.target_user, reply_to: m.reply_to,
-    is_deleted: m.is_deleted, deleted_at: m.deleted_at, created_at_raw: m.created_at,
-  }), []);
-
   // メッセージ取得 & リアルタイム
   useEffect(() => {
     if (!myProfile) return;
@@ -256,6 +296,19 @@ export default function ChatApp() {
     };
     initDB();
 
+    // リアクション取得
+    const fetchReactions = async () => {
+      const { data } = await supabase.from('message_reactions').select('*').order('created_at', { ascending: true });
+      if (data) {
+        setReactions(data.reduce((acc: any, cur: any) => {
+          if (!acc[cur.message_id]) acc[cur.message_id] = [];
+          acc[cur.message_id].push(cur);
+          return acc;
+        }, {}));
+      }
+    };
+    fetchReactions();
+
     // アナウンス取得
     const fetchAnn = async () => {
       const { data } = await supabase.from('announcements').select('id, message_id, created_by').order('created_at', { ascending: false }).limit(5);
@@ -275,6 +328,27 @@ export default function ChatApp() {
 
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
       const channel = supabase.channel('chat-messages')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const newReact = payload.new as Reaction;
+            if (newReact.user_id === myProfile) return; // 楽観的更新済み
+            setReactions(prev => {
+               const map = { ...prev };
+               if (!map[newReact.message_id]) map[newReact.message_id] = [];
+               map[newReact.message_id] = [...map[newReact.message_id].filter(r => r.user_id !== newReact.user_id), newReact];
+               return map;
+            });
+          } else if (payload.eventType === 'DELETE') {
+             const oldReact = payload.old as Reaction;
+             setReactions(prev => {
+                const map = { ...prev };
+                if (map[oldReact.message_id]) {
+                   map[oldReact.message_id] = map[oldReact.message_id].filter(r => r.id !== oldReact.id);
+                }
+                return map;
+             });
+          }
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
           if (payload.eventType === 'INSERT') {
             const newMsg = payload.new as any;
@@ -683,6 +757,8 @@ export default function ChatApp() {
                   ref={el => { if (el && typeof msg.id === 'number') msgRefs.current.set(msg.id, el); }}
                   onTouchStart={e => handleLongPressStart(msg, e)} onTouchEnd={handleLongPressEnd} onTouchMove={handleLongPressEnd}
                   onContextMenu={e => { e.preventDefault(); if (!msg.is_deleted && msg.status !== 'sending') setContextMenu({ msg, x: e.clientX, y: e.clientY }); }}
+                  onMouseEnter={() => setHoveredMsgId(msg.id)}
+                  onMouseLeave={() => setHoveredMsgId(null)}
                   style={{
                     alignSelf: msg.isMine ? 'flex-end' : 'flex-start',
                     display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row',
@@ -746,7 +822,40 @@ export default function ChatApp() {
                       }}>
                         {msg.text && renderTextWithLinks(msg.text)}
                         {msg.imageUrl && <img loading="lazy" src={msg.imageUrl} alt="" onClick={() => handleImageClick(msg.id)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
+                        
+                        {/* PCホバー時のリアクション追加ボタン */}
+                        {hoveredMsgId === msg.id && typeof msg.id === 'number' && !msg.is_deleted && window.matchMedia('(hover: hover)').matches && (
+                          <div 
+                            onClick={(e) => { e.stopPropagation(); setContextMenu({ msg, x: e.clientX, y: e.clientY }); }}
+                            style={{
+                              position: 'absolute', top: '4px',
+                              [msg.isMine ? 'left' : 'right']: '-36px',
+                              background: '#fff', border: '1px solid #e2e8f0', borderRadius: '50%', padding: '6px',
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.1)', cursor: 'pointer', zIndex: 10, display: 'flex', color: '#94a3b8'
+                            }}>
+                             <SmilePlus size={16} />
+                          </div>
+                        )}
                       </div>
+                      
+                      {/* リアクションバッジ */}
+                      {typeof msg.id === 'number' && reactions[msg.id] && reactions[msg.id].length > 0 && (
+                         <div style={{
+                           display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '-6px', zIndex: 3,
+                           alignSelf: msg.isMine ? 'flex-end' : 'flex-start',
+                           marginRight: msg.isMine ? '6px' : '0', marginLeft: msg.isMine ? '0' : '6px'
+                         }}>
+                           {Object.entries(reactions[msg.id as number].reduce((acc, r) => { acc[r.reaction_id] = (acc[r.reaction_id] || 0) + 1; return acc; }, {} as Record<string, number>)).map(([rid, count]) => {
+                             const isMyReact = reactions[msg.id as number].some((r: Reaction) => r.user_id === myProfile && r.reaction_id === rid);
+                             return (
+                                <div key={rid} onClick={() => handleReact(msg.id as number, rid)} style={{ background: isMyReact ? 'rgba(147,112,219,0.1)' : '#fff', border: isMyReact ? '1px solid #9370db' : '1px solid #e2e8f0', borderRadius: '12px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+                                   <img src={`/reactions/${rid}.svg`} alt={rid} style={{ width: '16px', height: '16px' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                   <span style={{ fontSize: '0.65rem', color: isMyReact ? '#9370db' : '#64748b', fontWeight: 600 }}>{count}</span>
+                                </div>
+                             )
+                           })}
+                         </div>
+                      )}
                       </div>
                     )}
 
@@ -857,20 +966,65 @@ export default function ChatApp() {
           <div style={{ position:'fixed', inset:0, zIndex:200 }} onClick={() => setContextMenu(null)} />
           <div style={{
             position:'fixed', left: Math.min(contextMenu.x, window.innerWidth - 170), top: Math.min(contextMenu.y - 10, window.innerHeight - 280),
-            zIndex:201, background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'14px', padding:'4px', minWidth:'155px',
-            boxShadow:'0 8px 30px rgba(0,0,0,0.15)', border:'1px solid rgba(0,0,0,0.06)'
+            zIndex:201
           }}>
-            {[
-              { icon: <Reply size={16} />, label: 'リプライ', onClick: () => handleReply(contextMenu.msg) },
-              { icon: <Copy size={16} />, label: 'コピー', onClick: () => handleCopy(contextMenu.msg), show: !!contextMenu.msg.text },
-              { icon: <Megaphone size={16} />, label: 'アナウンス', onClick: () => handleAnnounce(contextMenu.msg), show: !!contextMenu.msg.text && typeof contextMenu.msg.id === 'number' },
-              { icon: <Trash2 size={16} />, label: '送信取り消し', onClick: () => handleUnsend(contextMenu.msg), show: contextMenu.msg.isMine, color: '#dc2626' },
-              { icon: <X size={16} />, label: '削除', onClick: () => handleLocalDelete(contextMenu.msg), color: '#94a3b8' },
-            ].filter(item => item.show !== false).map((item, i) => (
-              <button key={i} onClick={item.onClick} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 14px', background:'none', border:'none', cursor:'pointer', color: item.color || 'var(--text-main)', width:'100%', textAlign:'left', borderRadius:'8px', fontSize:'0.83rem', fontWeight:500 }}>
-                {item.icon} {item.label}
-              </button>
-            ))}
+            {/* クイックリアクションバー */}
+            {typeof contextMenu.msg.id === 'number' && !contextMenu.msg.is_deleted && (
+              <div className="animate-slide-up" style={{ display:'flex', gap:'8px', padding:'8px 12px', background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'14px', boxShadow:'0 8px 30px rgba(0,0,0,0.15)', border:'1px solid rgba(0,0,0,0.06)', marginBottom:'8px' }}>
+                {recentReactions.map(rid => (
+                  <button key={rid} onClick={() => handleReact(contextMenu.msg.id as number, rid)} style={{ border:'none', padding:0, cursor:'pointer', width:'36px', height:'36px', borderRadius:'18px', background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <img src={`/reactions/${rid}.svg`} alt={rid} style={{width:'26px', height:'26px'}} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  </button>
+                ))}
+                <button onClick={() => setShowFullReactionPicker(contextMenu.msg.id as number)} style={{ background:'#f1f5f9', border:'none', padding:0, cursor:'pointer', width:'36px', height:'36px', borderRadius:'18px', display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b' }}>
+                  <SmilePlus size={20} />
+                </button>
+              </div>
+            )}
+            
+            <div style={{
+              background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'14px', padding:'4px', minWidth:'155px',
+              boxShadow:'0 8px 30px rgba(0,0,0,0.15)', border:'1px solid rgba(0,0,0,0.06)'
+            }}>
+              {[
+                { icon: <Reply size={16} />, label: 'リプライ', onClick: () => handleReply(contextMenu.msg) },
+                { icon: <Copy size={16} />, label: 'コピー', onClick: () => handleCopy(contextMenu.msg), show: !!contextMenu.msg.text },
+                { icon: <Megaphone size={16} />, label: 'アナウンス', onClick: () => handleAnnounce(contextMenu.msg), show: !!contextMenu.msg.text && typeof contextMenu.msg.id === 'number' },
+                { icon: <Trash2 size={16} />, label: '送信取り消し', onClick: () => handleUnsend(contextMenu.msg), show: contextMenu.msg.isMine, color: '#dc2626' },
+                { icon: <X size={16} />, label: '削除', onClick: () => handleLocalDelete(contextMenu.msg), color: '#94a3b8' },
+              ].filter(item => item.show !== false).map((item, i) => (
+                <button key={i} onClick={item.onClick} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 14px', background:'none', border:'none', cursor:'pointer', color: item.color || 'var(--text-main)', width:'100%', textAlign:'left', borderRadius:'8px', fontSize:'0.83rem', fontWeight:500 }}>
+                  {item.icon} {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* フルのリアクションピッカー (ボトムシート) */}
+      {showFullReactionPicker !== null && (
+        <>
+          <div style={{ position:'fixed', inset:0, zIndex:202, opacity: 0 }} onClick={() => setShowFullReactionPicker(null)} />
+          <div className="animate-slide-up" style={{ position:'fixed', bottom:0, left:0, right:0, background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderTopLeftRadius:'24px', borderTopRightRadius:'24px', padding:'20px 16px', boxShadow:'0 -8px 30px rgba(0,0,0,0.15)', zIndex:203, borderTop:'1px solid rgba(0,0,0,0.06)', maxHeight: '60vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'16px', alignItems:'center'}}>
+              <h4 style={{margin:0, color:'var(--text-main)', fontSize:'1rem'}}>リアクションを選択</h4>
+               <button onClick={() => setShowFullReactionPicker(null)} style={{background:'none', border:'none', fontSize:'1.3rem', cursor:'pointer', color:'var(--text-muted)'}}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(60px, 1fr))', gap:'12px', paddingBottom:'24px' }}>
+                {['mochi', 'merry', 'milk'].flatMap(char => 
+                  ['smile', 'heart', 'cry', 'angry', 'sweat', 'star', 'good', 'ok', 'sleep', 'question'].map(exp => {
+                    const rid = `${char}_${exp}`;
+                    return (
+                      <div key={rid} onClick={() => handleReact(showFullReactionPicker, rid)} style={{aspectRatio:'1/1', background:'#f8fafc', borderRadius:'14px', overflow:'hidden', cursor:'pointer', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center', transition:'transform 0.1s'}} onMouseDown={e => e.currentTarget.style.transform='scale(0.95)'} onMouseUp={e => e.currentTarget.style.transform='none'}>
+                         <img loading="lazy" src={`/reactions/${rid}.svg`} alt={rid} style={{width:'40px', height:'40px', objectFit:'contain'}} onError={(e) => { (e.target as HTMLElement).style.display='none'; }} />
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
           </div>
         </>
       )}
