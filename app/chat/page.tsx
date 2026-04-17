@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Plus, Image as ImageIcon, Smile, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, Smile, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
@@ -49,7 +49,8 @@ export default function ChatApp() {
   const [isStampModalOpen, setIsStampModalOpen] = useState(false);
   const [myProfile, setMyProfile] = useState<string | null>(null);
   const [isProfileChecking, setIsProfileChecking] = useState(true);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [pushStatus, setPushStatus] = useState<string>('granted');
   const [isMochiMode, setIsMochiMode] = useState(false);
   const [isMochiTyping, setIsMochiTyping] = useState(false);
@@ -59,10 +60,13 @@ export default function ChatApp() {
   const [showAnnList, setShowAnnList] = useState(false);
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [localDeleted, setLocalDeleted] = useState<Set<number | string>>(new Set());
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const loaderRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const msgRefs = useRef<Map<number | string, HTMLDivElement>>(new Map());
 
@@ -99,14 +103,84 @@ export default function ChatApp() {
       });
       hasScrolledInitial.current = true;
       prevMsgCount.current = messages.length;
-    } else if (messages.length > prevMsgCount.current && isNearBottom.current) {
-      // 新着メッセージ + 最下部付近にいる場合のみスムーズスクロール
+    } else if (messages.length > prevMsgCount.current && isNearBottom.current && !isLoadingMore) {
+      // 新着メッセージ + 最下部付近にいる場合のみスムーズスクロール (過去ログ読み込み時は無視)
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       prevMsgCount.current = messages.length;
     } else {
       prevMsgCount.current = messages.length;
     }
-  }, [messages]);
+  }, [messages, isLoadingMore]);
+
+  // 無限スクロール (Intersection Observer)
+  useEffect(() => {
+    if (!loaderRef.current || !hasMore || isLoadingMore || messages.length === 0 || !myProfile) return;
+    
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && scrollContainerRef.current && scrollContainerRef.current.scrollTop < 100) {
+        setIsLoadingMore(true);
+        const oldestMsg = messages.find(m => !m.id.toString().startsWith('temp_'));
+        if (!oldestMsg || !oldestMsg.created_at_raw) {
+          setIsLoadingMore(false);
+          return;
+        }
+        
+        supabase.from('messages')
+          .select('*')
+          .lt('created_at', oldestMsg.created_at_raw)
+          .order('created_at', { ascending: false })
+          .limit(50)
+          .then(async ({ data }) => {
+            if (data && data.length > 0) {
+              const sorted = data.reverse();
+              const formatted = sorted.map(m => formatMsg(m, myProfile));
+              
+              const replyIds = formatted.filter(m => m.reply_to).map(m => m.reply_to!);
+              if (replyIds.length > 0) {
+                const { data: replyMsgs } = await supabase.from('messages').select('id, text, user_id, is_deleted').in('id', replyIds);
+                if (replyMsgs) {
+                  const replyMap = new Map(replyMsgs.map(r => [r.id, r]));
+                  formatted.forEach(m => {
+                    if (m.reply_to && replyMap.has(m.reply_to)) {
+                      const r = replyMap.get(m.reply_to)!;
+                      m.reply_text = r.is_deleted ? 'メッセージの送信を取り消しました' : r.text;
+                      m.reply_user = SPEAKER(r.user_id);
+                    }
+                  });
+                }
+              }
+
+              const container = scrollContainerRef.current;
+              const prevScrollHeight = container?.scrollHeight || 0;
+
+              setMessages(prev => {
+                const prevIds = new Set(prev.map(p => p.id));
+                const newMsgs = formatted.filter(f => !prevIds.has(f.id));
+                return [...newMsgs, ...prev];
+              });
+              
+              if (data.length < 50) setHasMore(false);
+
+              // 過去ログ追加後のスクロール位置保持
+              if (container) {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    const newScrollHeight = container.scrollHeight;
+                    container.scrollTop = newScrollHeight - prevScrollHeight;
+                  });
+                });
+              }
+            } else {
+              setHasMore(false);
+            }
+            setIsLoadingMore(false);
+          });
+      }
+    }, { root: scrollContainerRef.current, threshold: 0.1 });
+    
+    observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, messages, myProfile, formatMsg]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) setPushStatus(Notification.permission);
@@ -176,6 +250,7 @@ export default function ChatApp() {
             const unread = sorted.filter(m => m.user_id !== myProfile && !m.is_read).map(m => m.id);
             if (unread.length > 0) supabase.from('messages').update({ is_read: true }).in('id', unread).then();
           }
+          if (sorted.length < 50) setHasMore(false);
         }
       } catch { setIsDBReady(false); }
     };
@@ -525,6 +600,12 @@ export default function ChatApp() {
   // フィルタ: ローカル削除されたメッセージを除外
   const visibleMessages = messages.filter(m => !localDeleted.has(m.id));
   const latestAnn = announcements[0];
+  const previewableImages = visibleMessages.filter(m => m.imageUrl && !m.imageUrl.includes('/stamps/'));
+
+  const handleImageClick = (msgId: string | number) => {
+    const idx = previewableImages.findIndex(m => m.id === msgId);
+    if (idx !== -1) setPreviewImageIndex(idx);
+  };
 
   return (
     <>
@@ -562,8 +643,8 @@ export default function ChatApp() {
                     <Megaphone size={12} color="#9370db" style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: '0.7rem', color: '#9370db', fontWeight: 600, flexShrink: 0 }}>{SPEAKER(a.user_id)}</span>
                     <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.text}</span>
-                    <button onClick={e => { e.stopPropagation(); removeAnnouncement(a.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: 0, flexShrink: 0 }}>
-                      <X size={14} />
+                    <button onClick={e => { e.stopPropagation(); removeAnnouncement(a.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0, flexShrink: 0 }}>
+                      <Trash2 size={15} />
                     </button>
                   </div>
                 ))}
@@ -574,6 +655,11 @@ export default function ChatApp() {
 
         {/* メッセージ一覧 */}
         <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {hasMore && window !== undefined && (
+            <div ref={loaderRef} style={{ padding: '16px', display: 'flex', justifyContent: 'center' }}>
+              {isLoadingMore ? <Loader2 size={24} className="animate-spin" color="#94a3b8" /> : null}
+            </div>
+          )}
           {visibleMessages.map((msg, index) => {
             const prevMsg = index > 0 ? visibleMessages[index - 1] : null;
             const nextMsg = index < visibleMessages.length - 1 ? visibleMessages[index + 1] : null;
@@ -608,7 +694,7 @@ export default function ChatApp() {
                 >
                   {/* アバター: 先頭のみ表示、2通目以降はスペーサー */}
                   {isFirst && msg.user_id && ['user_a','user_b','mochi'].includes(msg.user_id) ? (
-                    <img src={avatarSrc} alt="" style={{width:'34px', height:'34px', borderRadius:'50%', objectFit:'contain', padding:'3px', boxSizing:'border-box', background:'#fff', border:'1px solid var(--glass-border)', flexShrink: 0, marginTop: '2px'}} />
+                    <img loading="lazy" src={avatarSrc} alt="" style={{width:'34px', height:'34px', borderRadius:'50%', objectFit:'contain', padding:'3px', boxSizing:'border-box', background:'#fff', border:'1px solid var(--glass-border)', flexShrink: 0, marginTop: '2px'}} />
                   ) : (
                     <div style={{width:'34px', flexShrink: 0}} />
                   )}
@@ -621,8 +707,31 @@ export default function ChatApp() {
                         <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>メッセージの送信を取り消しました</span>
                       </div>
                     ) : (!msg.text && msg.imageUrl) ? (
-                      <img src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && setPreviewImage(msg.imageUrl!)} style={{ width:'150px', height:'150px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
+                      <img loading="lazy" src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && handleImageClick(msg.id)} style={{ width:'150px', height:'150px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
                     ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start' }}>
+                        {/* リプライプレビュー（LINE風・投稿の上にくっつく部分） */}
+                        {(msg.reply_text || msg.reply_to) && (
+                          <div onClick={e => { e.stopPropagation(); if (typeof msg.reply_to === 'number') jumpToMessage(msg.reply_to); }}
+                            style={{
+                              background: 'rgba(0,0,0,0.05)',
+                              padding: '6px 12px 14px 12px',
+                              borderRadius: '14px 14px 0 0',
+                              marginBottom: '-10px',
+                              fontSize: '0.7rem',
+                              cursor: typeof msg.reply_to === 'number' ? 'pointer' : 'default',
+                              color: '#64748b',
+                              maxWidth: '100%',
+                              zIndex: 1
+                            }}>
+                            <div style={{ fontWeight: 700, marginBottom: '2px', color: '#9370db', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Reply size={12} /> {msg.reply_user || ''}
+                            </div>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                              {msg.reply_text || ''}
+                            </div>
+                          </div>
+                        )}
                       <div style={{
                         background: bubbleBg,
                         padding: '10px 14px',
@@ -632,18 +741,12 @@ export default function ChatApp() {
                         borderTopLeftRadius: (!msg.isMine && isFirst) ? '4px' : '18px',
                         // 連続時は丸く
                         ...(isGrouped ? { borderTopRightRadius: msg.isMine ? '4px' : '18px', borderTopLeftRadius: msg.isMine ? '18px' : '4px' } : {}),
-                        color: 'var(--text-main)', boxShadow: '0 2px 8px rgba(100,116,166,0.06)', width: 'fit-content', maxWidth: '100%'
+                        color: 'var(--text-main)', boxShadow: '0 2px 8px rgba(100,116,166,0.06)', width: 'fit-content', maxWidth: '100%',
+                        zIndex: 2, position: 'relative'
                       }}>
-                        {/* リプライプレビュー */}
-                        {(msg.reply_text || msg.reply_to) && (
-                          <div onClick={e => { e.stopPropagation(); if (typeof msg.reply_to === 'number') jumpToMessage(msg.reply_to); }}
-                            style={{ borderLeft: '3px solid #9370db', paddingLeft: '8px', marginBottom: '6px', fontSize: '0.72rem', color: '#64748b', cursor: typeof msg.reply_to === 'number' ? 'pointer' : 'default' }}>
-                            <div style={{ fontWeight: 700, marginBottom: '1px', color: '#9370db' }}>{msg.reply_user || ''}</div>
-                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{msg.reply_text || ''}</div>
-                          </div>
-                        )}
                         {msg.text && renderTextWithLinks(msg.text)}
-                        {msg.imageUrl && <img src={msg.imageUrl} alt="" onClick={() => setPreviewImage(msg.imageUrl!)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
+                        {msg.imageUrl && <img loading="lazy" src={msg.imageUrl} alt="" onClick={() => handleImageClick(msg.id)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
+                      </div>
                       </div>
                     )}
 
@@ -669,7 +772,7 @@ export default function ChatApp() {
 
           {isMochiTyping && (
             <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'flex-end', gap: '6px', maxWidth: '80%', marginTop: '12px' }}>
-              <img src="/mochi.png" alt="" style={{width:'36px', height:'36px', borderRadius:'50%', objectFit:'contain', padding:'4px', background:'#fff', border:'1px solid var(--glass-border)', opacity:0.8}} />
+              <img loading="lazy" src="/mochi.png" alt="" style={{width:'36px', height:'36px', borderRadius:'50%', objectFit:'contain', padding:'4px', background:'#fff', border:'1px solid var(--glass-border)', opacity:0.8}} />
               <div style={{ background:'#e2e8f0', padding:'10px 14px', borderRadius:'18px', borderBottomLeftRadius:'4px' }}>
                 <div style={{ display:'flex', gap:'4px', alignItems:'center', height:'20px' }}>
                   {[0, 0.2, 0.4].map((d, i) => <div key={i} style={{ width:'6px', height:'6px', background:'#cbd5e1', borderRadius:'50%', animation: `bounce 1s infinite ${d}s` }} />)}
@@ -688,7 +791,7 @@ export default function ChatApp() {
               {[
                 { icon: <ImageIcon size={22} />, label: '画像', bg: '#e2e8f0', color: '#475569', onClick: () => document.getElementById('media-upload')?.click() },
                 { icon: <Smile size={22} />, label: 'スタンプ', bg: '#fce7f3', color: '#db2777', onClick: () => { setShowAttachMenu(false); setShowStampPicker(true); } },
-                { icon: <img src="/mochi.png" alt="" style={{width:'26px', height:'26px', objectFit:'contain'}} />, label: isMochiMode ? 'ON' : 'もち', bg: isMochiMode ? '#cbd5e1' : '#f1f5f9', color: '#333', onClick: () => { setShowAttachMenu(false); setIsMochiMode(p => !p); }, border: isMochiMode ? '2px solid #333' : 'none' },
+                { icon: <img loading="lazy" src="/mochi.png" alt="" style={{width:'26px', height:'26px', objectFit:'contain'}} />, label: isMochiMode ? 'ON' : 'もち', bg: isMochiMode ? '#cbd5e1' : '#f1f5f9', color: '#333', onClick: () => { setShowAttachMenu(false); setIsMochiMode(p => !p); }, border: isMochiMode ? '2px solid #333' : 'none' },
                 { icon: <FilePlus size={22} />, label: '作成', bg: '#dbeafe', color: '#2563eb', onClick: () => { setShowAttachMenu(false); setIsStampModalOpen(true); } },
               ].map((item, i) => (
                 <div key={i} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', cursor:'pointer'}} onClick={item.onClick}>
@@ -705,7 +808,7 @@ export default function ChatApp() {
               <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(60px, 1fr))', gap:'10px', overflowY:'auto', maxHeight:'300px'}}>
                 {Array.from({length: 64}, (_, i) => `stamp_custom_${i + 1}.png`).map(fn => (
                   <div key={fn} onClick={() => sendStamp(fn)} style={{aspectRatio:'1/1', background:'#f8fafc', borderRadius:'10px', overflow:'hidden', cursor:'pointer', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center'}}>
-                    <img src={`/stamps/${fn}`} alt="" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', padding:'3px'}} onError={(e) => { (e.target as HTMLElement).style.display='none'; }} />
+                    <img loading="lazy" src={`/stamps/${fn}`} alt="" style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', padding:'3px'}} onError={(e) => { (e.target as HTMLElement).style.display='none'; }} />
                   </div>
                 ))}
               </div>
@@ -726,7 +829,7 @@ export default function ChatApp() {
 
           {isMochiMode && (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'6px', marginBottom:'8px', padding:'5px 10px', background:'#f1f5f9', borderRadius:'10px' }}>
-              <img src="/mochi.png" alt="" style={{ width:'18px', height:'18px', objectFit:'contain' }} />
+              <img loading="lazy" src="/mochi.png" alt="" style={{ width:'18px', height:'18px', objectFit:'contain' }} />
               <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#64748b' }}>もちモード中</span>
               <button onClick={() => setIsMochiMode(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', fontSize:'0.9rem', padding:'0 4px', lineHeight:1 }}>✕</button>
             </div>
@@ -772,10 +875,42 @@ export default function ChatApp() {
         </>
       )}
 
-      {previewImage && (
-        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(5px)'}} onClick={() => setPreviewImage(null)}>
+      {previewImageIndex !== null && previewableImages.length > 0 && (
+        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(5px)'}}
+             onClick={() => setPreviewImageIndex(null)}
+             onTouchStart={e => setTouchStartX(e.touches[0].clientX)}
+             onTouchMove={e => {
+               if (touchStartX === null) return;
+               const currentX = e.touches[0].clientX;
+               if (touchStartX - currentX > 50) {
+                 // 左スワイプ（次・新しい方へ）
+                 if (previewImageIndex > 0) setPreviewImageIndex(previewImageIndex - 1);
+                 setTouchStartX(null);
+               } else if (currentX - touchStartX > 50) {
+                 // 右スワイプ（前・古い方へ）
+                 if (previewImageIndex < previewableImages.length - 1) setPreviewImageIndex(previewImageIndex + 1);
+                 setTouchStartX(null);
+               }
+             }}
+             onTouchEnd={() => setTouchStartX(null)}
+        >
           <button style={{position:'absolute', top:20, right:20, background:'rgba(255,255,255,0.2)', border:'none', color:'white', borderRadius:'50%', padding:8, cursor:'pointer'}}><X size={32}/></button>
-          <img src={previewImage} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain'}} onClick={e => e.stopPropagation()} />
+          
+          {/* 左矢印（過去の画像へ） - previewableImagesは新しい順ソートなので、indexが大きい方が過去 */}
+          {previewImageIndex < previewableImages.length - 1 && (
+            <button onClick={e => { e.stopPropagation(); setPreviewImageIndex(previewImageIndex + 1); }} style={{ position: 'absolute', left: 20, background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', borderRadius: '50%', padding: 8, cursor: 'pointer' }}>
+              <ChevronLeft size={32} />
+            </button>
+          )}
+
+          <img src={previewableImages[previewImageIndex].imageUrl} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', userSelect: 'none'}} onClick={e => e.stopPropagation()} />
+
+          {/* 右矢印（未来の画像へ） - indexが小さい方が新しい */}
+          {previewImageIndex > 0 && (
+            <button onClick={e => { e.stopPropagation(); setPreviewImageIndex(previewImageIndex - 1); }} style={{ position: 'absolute', right: 20, background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', borderRadius: '50%', padding: 8, cursor: 'pointer' }}>
+              <ChevronRight size={32} />
+            </button>
+          )}
         </div>
       )}
       {isStampModalOpen && <StampCreatorModal onClose={() => setIsStampModalOpen(false)} onSave={handleStampSave} />}
