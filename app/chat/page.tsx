@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { Send, Plus, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
@@ -57,6 +57,9 @@ export default function ChatApp() {
   const [isMochiMode, setIsMochiMode] = useState(false);
   const [isMochiTyping, setIsMochiTyping] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ msg: Message; rect?: DOMRect | null; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{top: number, left: number, placement: 'top'|'bottom', originX: number} | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnList, setShowAnnList] = useState(false);
@@ -502,6 +505,43 @@ export default function ChatApp() {
   const triggerPush = async (text: string, imageUrl?: string) => {
     try { await fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: "BOSHI×BOSHI Talk", body: text || "スタンプが送信されました！", imageUrl, senderUserId: myProfile }) }); } catch {}
   };
+
+  // モーダルの実寸測定と配置計算 (paint前に確約する)
+  useLayoutEffect(() => {
+    if (!contextMenu || !contextMenu.rect || !menuRef.current) {
+      setMenuPos(null);
+      setMenuOpen(false);
+      return;
+    }
+    const menuEl = menuRef.current;
+    const m = menuEl.getBoundingClientRect(); // メニュー自身の実サイズ
+    const a = contextMenu.rect;               // 吹き出しのサイズと位置
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const GAP = 8;
+    const SAFE = 12;
+
+    const spaceAbove = a.top;
+    const spaceBelow = vh - a.bottom;
+    const placement = spaceAbove >= m.height + GAP + SAFE || spaceAbove > spaceBelow ? 'top' : 'bottom';
+
+    let top = placement === 'top' ? a.top - m.height - GAP : a.bottom + GAP;
+    const anchorCenterX = a.left + a.width / 2;
+    let left = anchorCenterX - m.width / 2;
+
+    // 画面外にはみ出さないように補正
+    left = Math.max(SAFE, Math.min(left, vw - m.width - SAFE));
+    top  = Math.max(SAFE, Math.min(top,  vh - m.height - SAFE));
+
+    // transform-origin 用のX座標 (補正後のメニュー左端基準)
+    const originX = anchorCenterX - left;
+
+    setMenuPos({ top, left, placement, originX });
+
+    // paint の次のフレームでフワッと表示
+    const id = requestAnimationFrame(() => setMenuOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, [contextMenu]);
 
   // ===== 長押し =====
   const handleLongPressStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
@@ -974,68 +1014,61 @@ export default function ChatApp() {
       {/* 長押しコンテキストメニュー */}
       {contextMenu && (
         <>
-          <div style={{ position:'fixed', inset:0, zIndex:200 }} onClick={() => setContextMenu(null)} />
-          {(() => {
-            const rect = contextMenu.rect;
-            const isTopHalf = rect ? (rect.top < window.innerHeight / 2) : (contextMenu.y < window.innerHeight / 2);
-            
-            // Positioning Logic
-            const styleBase: React.CSSProperties = {
-              position: 'fixed',
-              left: rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 300)) : Math.max(16, Math.min(contextMenu.x, window.innerWidth - 300)),
-              zIndex: 201, 
-              display: 'flex', 
-              flexDirection: isTopHalf ? 'column' : 'column-reverse', 
-              gap: '6px', 
-              alignItems: 'flex-start',
-              animation: 'fadeIn 0.2s ease-out'
-            };
-            
-            if (isTopHalf) {
-              styleBase.top = rect ? rect.bottom + 8 : contextMenu.y + 10;
-            } else {
-              styleBase.bottom = rect ? (window.innerHeight - rect.top) + 8 : (window.innerHeight - contextMenu.y) + 10;
-            }
-            
-            return (
-              <div style={styleBase}>
-                {/* クイックリアクションバー */}
-                {typeof contextMenu.msg.id === 'number' && !contextMenu.msg.is_deleted && (
-                  <div style={{ display:'flex', gap:'8px', padding:'10px 16px', background:'#282828', borderRadius:'30px', boxShadow:'0 8px 30px rgba(0,0,0,0.3)', width: 'fit-content' }}>
-                    {recentReactions.map(rid => (
-                      <button key={rid} onClick={() => handleReact(contextMenu.msg.id as number, rid)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <img src={`/reactions/${rid}.svg`} alt={rid} style={{width:'34px', height:'34px'}} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                      </button>
-                    ))}
-                    <button onClick={() => setShowFullReactionPicker(contextMenu.msg.id as number)} style={{ background:'#3f3f3f', border:'none', padding:0, cursor:'pointer', width:'34px', height:'34px', borderRadius:'17px', display:'flex', alignItems:'center', justifyContent:'center', color:'#d1d5db', marginLeft: '4px' }}>
-                      <SmilePlus size={20} />
-                    </button>
-                  </div>
-                )}
-                
-                {/* アクションメニューグリッド */}
-                <div style={{
-                  background:'#282828', borderRadius:'16px', padding:'16px', width:'295px',
-                  boxShadow:'0 8px 30px rgba(0,0,0,0.3)'
-                }}>
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'18px 8px' }}>
-                    {[
-                      { icon: <Reply size={22} strokeWidth={1.5} />, label: 'リプライ', onClick: () => handleReply(contextMenu.msg) },
-                      { icon: <Copy size={22} strokeWidth={1.5} />, label: 'コピー', onClick: () => handleCopy(contextMenu.msg), show: !!contextMenu.msg.text },
-                      { icon: <Megaphone size={22} strokeWidth={1.5} />, label: 'アナウンス', onClick: () => handleAnnounce(contextMenu.msg), show: !!contextMenu.msg.text && typeof contextMenu.msg.id === 'number' },
-                      { icon: <Trash2 size={22} strokeWidth={1.5} />, label: '送信取消', onClick: () => handleUnsend(contextMenu.msg), show: contextMenu.msg.isMine },
-                      { icon: <X size={22} strokeWidth={1.5} />, label: '削除', onClick: () => handleLocalDelete(contextMenu.msg) },
-                    ].filter(item => item.show !== false).map((item, i) => (
-                      <button key={i} onClick={item.onClick} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'8px', background:'none', border:'none', cursor:'pointer', color:'#f1f5f9', padding:0 }}>
-                        {item.icon}
-                        <span style={{ fontSize:'0.7rem', fontWeight:500, whiteSpace:'nowrap' }}>{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          <div style={{ 
+            position:'fixed', inset:0, zIndex:200, background:'rgba(0,0,0,0.25)', 
+            opacity: menuOpen ? 1 : 0, transition: 'opacity 180ms ease-out' 
+          }} onClick={() => setContextMenu(null)} />
+          <div ref={menuRef} style={{
+            position: 'fixed',
+            top: menuPos ? menuPos.top : 0,
+            left: menuPos ? menuPos.left : 0,
+            zIndex: 201, 
+            display: 'flex', 
+            flexDirection: menuPos?.placement === 'top' ? 'column' : 'column-reverse', 
+            gap: '8px', 
+            alignItems: 'flex-start',
+            opacity: menuPos && menuOpen ? 1 : 0,
+            transform: menuOpen ? 'scale(1) translateY(0)' : `scale(0.9) translateY(${menuPos?.placement === 'top' ? '6px' : '-6px'})`,
+            transformOrigin: `${menuPos ? menuPos.originX : 0}px ${menuPos?.placement === 'top' ? '100%' : '0%'}`,
+            transition: 'opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+            willChange: 'transform, opacity',
+            pointerEvents: menuPos && menuOpen ? 'auto' : 'none',
+          }}>
+            {/* クイックリアクションバー */}
+            {typeof contextMenu.msg.id === 'number' && !contextMenu.msg.is_deleted && (
+              <div style={{ display:'flex', gap:'8px', padding:'10px 16px', background:'#282828', borderRadius:'30px', boxShadow:'0 8px 30px rgba(0,0,0,0.3)', width: 'fit-content' }}>
+                {recentReactions.map(rid => (
+                  <button key={rid} onClick={() => handleReact(contextMenu.msg.id as number, rid)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'transform 150ms', transform:'scale(1)' }} onMouseOver={(e) => e.currentTarget.style.transform='scale(1.1)'} onMouseOut={(e) => e.currentTarget.style.transform='scale(1)'}>
+                    <img src={`/reactions/${rid}.svg`} alt={rid} style={{width:'36px', height:'36px'}} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  </button>
+                ))}
+                <button onClick={() => setShowFullReactionPicker(contextMenu.msg.id as number)} style={{ background:'#3f3f3f', border:'none', padding:0, cursor:'pointer', width:'36px', height:'36px', borderRadius:'18px', display:'flex', alignItems:'center', justifyContent:'center', color:'#d1d5db', marginLeft: '4px' }}>
+                  <SmilePlus size={20} />
+                </button>
               </div>
-            );
-          })()}
+            )}
+            
+            {/* アクションメニューグリッド */}
+            <div style={{
+              background:'#282828', borderRadius:'16px', padding:'16px', width:'295px',
+              boxShadow:'0 8px 30px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:'18px 8px' }}>
+                {[
+                  { icon: <Reply size={22} strokeWidth={1.5} />, label: 'リプライ', onClick: () => handleReply(contextMenu.msg) },
+                  { icon: <Copy size={22} strokeWidth={1.5} />, label: 'コピー', onClick: () => handleCopy(contextMenu.msg), show: !!contextMenu.msg.text },
+                  { icon: <Megaphone size={22} strokeWidth={1.5} />, label: 'アナウンス', onClick: () => handleAnnounce(contextMenu.msg), show: !!contextMenu.msg.text && typeof contextMenu.msg.id === 'number' },
+                  { icon: <Trash2 size={22} strokeWidth={1.5} />, label: '送信取消', onClick: () => handleUnsend(contextMenu.msg), show: contextMenu.msg.isMine },
+                  { icon: <X size={22} strokeWidth={1.5} />, label: '削除', onClick: () => handleLocalDelete(contextMenu.msg) },
+                ].filter(item => item.show !== false).map((item, i) => (
+                  <button key={i} onClick={item.onClick} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'8px', background:'none', border:'none', cursor:'pointer', color:'#f1f5f9', padding:0 }}>
+                    {item.icon}
+                    <span style={{ fontSize:'0.7rem', fontWeight:500, whiteSpace:'nowrap' }}>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </>
       )}
 
