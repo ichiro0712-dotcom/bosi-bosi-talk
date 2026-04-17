@@ -821,7 +821,7 @@ export default function ChatApp() {
                     alignSelf: msg.isMine ? 'flex-end' : 'flex-start',
                     display: 'flex', flexDirection: msg.isMine ? 'row-reverse' : 'row',
                     alignItems: 'flex-start', gap: '6px', maxWidth: '78%',
-                    marginTop: isGrouped ? '2px' : '12px', userSelect: 'text',
+                    marginTop: isGrouped ? '2px' : '12px', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none',
                     transition: 'background 0.3s', borderRadius: '12px', padding: '2px',
                     background: isHighlighted ? 'rgba(147,112,219,0.15)' : 'transparent',
                   }}
