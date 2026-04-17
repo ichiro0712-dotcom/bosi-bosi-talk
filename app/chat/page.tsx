@@ -522,10 +522,10 @@ export default function ChatApp() {
     const GAP = 8;
     const SAFE = 12;
 
-    const spaceAbove = a.top;
-    const spaceBelow = vh - a.bottom;
-    const placement = spaceAbove >= m.height + GAP + SAFE || spaceAbove > spaceBelow ? 'top' : 'bottom';
+    // 画面のどこをタップしたかで「上か下か」を厳密に判定
+    const placement = contextMenu.y < vh / 2 ? 'bottom' : 'top';
 
+    // placement が bottom なら吹き出しの「下」へ。top なら「上」へ。
     let top = placement === 'top' ? a.top - m.height - GAP : a.bottom + GAP;
     const anchorCenterX = a.left + a.width / 2;
     let left = anchorCenterX - m.width / 2;
