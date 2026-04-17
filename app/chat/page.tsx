@@ -581,6 +581,12 @@ export default function ChatApp() {
       alert('送信から24時間が経過したため、取り消しできません。');
       return;
     }
+
+    // 楽観的UI更新（一瞬で画面から消す）
+    setMessages(prev => prev.map(m => 
+      m.id === msg.id ? { ...m, is_deleted: true, text: '', imageUrl: undefined } : m
+    ));
+
     await supabase.from('messages').update({ is_deleted: true, text: '', image_url: null, deleted_at: new Date().toISOString() }).eq('id', msg.id);
   };
 
