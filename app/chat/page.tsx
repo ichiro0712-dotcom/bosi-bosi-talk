@@ -77,6 +77,7 @@ export default function ChatApp() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const longPressStartPos = useRef<{x: number, y: number} | null>(null);
   const msgRefs = useRef<Map<number | string, HTMLDivElement>>(new Map());
 
   // ローカル削除とリアクション履歴をlocalStorageから復元
@@ -548,14 +549,26 @@ export default function ChatApp() {
     if (msg.is_deleted || msg.status === 'sending') return;
     const cx = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const cy = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    longPressStartPos.current = { x: cx, y: cy };
     longPressTimer.current = setTimeout(() => {
-      // 500ms経過時の正確なDOM要素の位置を再取得
+      // 触覚フィードバック
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
       const target = document.getElementById(`msg-bubble-${msg.id}`);
       const rect = target ? target.getBoundingClientRect() : null;
       setContextMenu({ msg, rect, x: cx, y: cy });
     }, 500);
   };
-  const handleLongPressEnd = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
+  const handleLongPressMove = (e: React.TouchEvent) => {
+    if (!longPressStartPos.current || !longPressTimer.current) return;
+    const dx = e.touches[0].clientX - longPressStartPos.current.x;
+    const dy = e.touches[0].clientY - longPressStartPos.current.y;
+    // 10px以上動いた場合は誤タップ（スクロール）とみなしてキャンセル
+    if (Math.hypot(dx, dy) > 10) handleLongPressEnd();
+  };
+  const handleLongPressEnd = () => { 
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } 
+    longPressStartPos.current = null;
+  };
 
   // ===== メニューアクション =====
 
@@ -800,7 +813,7 @@ export default function ChatApp() {
                 )}
                 <div
                   ref={el => { if (el && typeof msg.id === 'number') msgRefs.current.set(msg.id, el); }}
-                  onTouchStart={e => handleLongPressStart(msg, e)} onTouchEnd={handleLongPressEnd} onTouchMove={handleLongPressEnd}
+                  onTouchStart={e => handleLongPressStart(msg, e)} onTouchMove={handleLongPressMove} onTouchEnd={handleLongPressEnd} onTouchCancel={handleLongPressEnd}
                   onContextMenu={e => { e.preventDefault(); if (!msg.is_deleted && msg.status !== 'sending') setContextMenu({ msg, x: e.clientX, y: e.clientY }); }}
                   onMouseEnter={() => setHoveredMsgId(msg.id)}
                   onMouseLeave={() => setHoveredMsgId(null)}
