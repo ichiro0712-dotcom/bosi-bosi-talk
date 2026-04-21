@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+export const maxDuration = 60;
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
 import webPush from 'web-push';
 import { readFileSync } from 'fs';

@@ -391,7 +391,11 @@ export default function ChatApp() {
               return m;
             }));
           }
-        }).subscribe();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+          fetchAnn();
+        })
+        .subscribe();
       return () => { supabase.removeChannel(channel); };
     }
   }, [myProfile, formatMsg]);
@@ -765,12 +769,16 @@ export default function ChatApp() {
               onClick={e => { e.stopPropagation(); jumpToMessage(latestAnn.message_id); }}>
               <Megaphone size={14} color="#9370db" style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '0.7rem', color: '#9370db', fontWeight: 600, flexShrink: 0 }}>{SPEAKER(latestAnn.user_id)}</span>
-              <span style={{ flex: 1, fontSize: '0.75rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{latestAnn.text}</span>
-              {announcements.length > 1 && (
-                <button onClick={e => { e.stopPropagation(); setShowAnnList(!showAnnList); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex' }}>
+              <span style={{ flex: 1, fontSize: '0.75rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, paddingRight: '8px' }}>{latestAnn.text}</span>
+              {announcements.length === 1 ? (
+                <button onClick={e => { e.stopPropagation(); removeAnnouncement(latestAnn.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0, display: 'flex', flexShrink: 0 }}>
+                  <Trash2 size={15} />
+                </button>
+              ) : announcements.length >= 2 ? (
+                <button onClick={e => { e.stopPropagation(); setShowAnnList(!showAnnList); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex', flexShrink: 0 }}>
                   <ChevronDown size={16} style={{ transform: showAnnList ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
                 </button>
-              )}
+              ) : null}
             </div>
             {/* 展開リスト */}
             {showAnnList && (
