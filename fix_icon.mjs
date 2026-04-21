@@ -6,8 +6,8 @@ async function processIcon(size, inFile, outFile) {
   try {
     const original = sharp(inFile);
     
-    // 文字がギリギリにならないよう、全体サイズの 90% に縮小
-    const innerScale = 0.90;
+    // 文字がギリギリにならないよう、全体サイズの 94% に縮小
+    const innerScale = 0.94;
     const innerSize = Math.floor(size * innerScale);
     const margin = Math.floor((size - innerSize) / 2);
     const adjustedMargin = size - innerSize - margin;
