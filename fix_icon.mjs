@@ -6,37 +6,27 @@ async function processIcon(size, inFile, outFile) {
   try {
     const original = sharp(inFile);
     
-    // 白や透明の余白をトリミングして、実際のグラフィック部分（文字＋背景）だけを抽出
-    const trimmedBuffer = await original
-      .trim({ background: { r: 255, g: 255, b: 255, alpha: 1 }, threshold: 50 })
-      .toBuffer();
-    
-    // 念のため透明対応のトリミングも
-    const transparentTrimmed = await sharp(trimmedBuffer)
-      .trim({ threshold: 50 })
-      .toBuffer()
-      .catch(() => trimmedBuffer);
-
-    // 文字がギリギリにならないよう、全体サイズの 82% ぐらいに縮小
-    const innerScale = 0.82;
+    // 文字がギリギリにならないよう、全体サイズの 90% に縮小
+    const innerScale = 0.90;
     const innerSize = Math.floor(size * innerScale);
     const margin = Math.floor((size - innerSize) / 2);
     const adjustedMargin = size - innerSize - margin;
 
     // 縮小した内側サイズの画像を作成
-    const resizedInnerBuffer = await sharp(transparentTrimmed)
+    const resizedInnerBuffer = await original
       .resize(innerSize, innerSize, { fit: 'cover' })
       .toBuffer();
 
     // 周りが白くならず、下のグラデーションの続きになるよう
-    // ヘリのピクセルを「反転(mirror)」させて外側に延長する
+    // ヘリのピクセルを「コピー(copy)」させて外側に延長する
+    // ※ mirror だと端の文字が反射して写り込むため copy に変更
     const extendedBuffer = await sharp(resizedInnerBuffer)
       .extend({
         top: margin,
         bottom: adjustedMargin,
         left: margin,
         right: adjustedMargin,
-        extendWith: 'mirror'
+        extendWith: 'copy'
       })
       .toBuffer();
 
