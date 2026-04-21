@@ -163,14 +163,16 @@ export default function ChatApp() {
       });
       hasScrolledInitial.current = true;
       prevMsgCount.current = messages.length;
-    } else if (messages.length > prevMsgCount.current && isNearBottom.current && !isLoadingMore) {
-      // 新着メッセージ + 最下部付近にいる場合のみスムーズスクロール (過去ログ読み込み時は無視)
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else if ((messages.length > prevMsgCount.current || isMochiTyping) && isNearBottom.current && !isLoadingMore) {
+      // 新着メッセージ到着時、または、もちが考え中になった時
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
       prevMsgCount.current = messages.length;
     } else {
       prevMsgCount.current = messages.length;
     }
-  }, [messages, isLoadingMore]);
+  }, [messages, isLoadingMore, isMochiTyping]);
 
   // 無限スクロール (Intersection Observer)
   useEffect(() => {
@@ -1023,8 +1025,17 @@ export default function ChatApp() {
           {isMochiMode && (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'6px', marginBottom:'8px', padding:'5px 10px', background:'#f1f5f9', borderRadius:'10px' }}>
               <img loading="lazy" src="/mochi.png" alt="" style={{ width:'18px', height:'18px', objectFit:'contain' }} />
-              <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#64748b' }}>もちモード中</span>
-              <button onClick={() => setIsMochiMode(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', fontSize:'0.9rem', padding:'0 4px', lineHeight:1 }}>✕</button>
+              {isMochiTyping ? (
+                <>
+                  <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#64748b' }}>もちが考え中</span>
+                  <div style={{ display:'flex', gap:'3px', alignItems:'center', marginLeft:'2px' }}>
+                    {[0, 0.2, 0.4].map((d, i) => <div key={i} style={{ width:'4px', height:'4px', background:'#94a3b8', borderRadius:'50%', animation: `bounce 1s infinite ${d}s` }} />)}
+                  </div>
+                </>
+              ) : (
+                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#64748b' }}>もちモード中</span>
+              )}
+              <button onClick={() => setIsMochiMode(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', fontSize:'0.9rem', padding:'0 4px', lineHeight:1, position:'absolute', right:'24px' }}>✕</button>
             </div>
           )}
 
