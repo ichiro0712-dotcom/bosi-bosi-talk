@@ -13,6 +13,7 @@ export default function AnniversaryModal({ onClose }: { onClose: () => void }) {
   const [originalAnnivDate, setOriginalAnnivDate] = useState<string>('');
   const [originalOtherAnnivs, setOriginalOtherAnnivs] = useState<OtherAnniv[]>([]);
   const [loading, setLoading] = useState(true);
+  const [systemTemplates, setSystemTemplates] = useState<any>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -30,6 +31,9 @@ export default function AnniversaryModal({ onClose }: { onClose: () => void }) {
       if (data.other_anniversaries) {
         setOtherAnnivs(data.other_anniversaries);
         setOriginalOtherAnnivs(data.other_anniversaries);
+      }
+      if (data.todo_templates) {
+        setSystemTemplates(data.todo_templates);
       }
     }
     setLoading(false);
@@ -66,10 +70,14 @@ export default function AnniversaryModal({ onClose }: { onClose: () => void }) {
     const userName = profile === 'user_a' ? 'ミルク' : profile === 'user_b' ? 'メリー' : '誰か';
     let messages: string[] = [];
 
+    const createTpl = systemTemplates?.anniv_create || '{name}さんが「つきあった日」を登録しました！💕';
+    const updateTpl = systemTemplates?.anniv_update || '{name}さんが「つきあった日」を変更しました！💕';
+    const deleteTpl = systemTemplates?.anniv_delete || '{name}さんが「つきあった日」を削除しました！💔';
+
     if (originalAnnivDate !== anniversaryDate) {
-      if (!originalAnnivDate && anniversaryDate) messages.push(`${userName}さんが「つきあった日」を登録しました！💕`);
-      else if (originalAnnivDate && anniversaryDate) messages.push(`${userName}さんが「つきあった日」を変更しました！💕`);
-      else messages.push(`${userName}さんが「つきあった日」を削除しました！💔`);
+      if (!originalAnnivDate && anniversaryDate) messages.push(createTpl.replace('{name}', userName));
+      else if (originalAnnivDate && anniversaryDate) messages.push(updateTpl.replace('{name}', userName));
+      else messages.push(deleteTpl.replace('{name}', userName));
     }
 
     validOthers.forEach(newItem => {

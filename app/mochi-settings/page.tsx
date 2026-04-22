@@ -59,11 +59,16 @@ export default function MochiSettingsPage() {
 
   // キャラ設定
   const [mochiPrompt, setMochiPrompt] = useState('');
-  const [todoTemplates, setTodoTemplates] = useState({
+  const [systemTemplates, setSystemTemplates] = useState({
     create: '{name}さんがTODO「{title}」を追加しました。',
     update: '{name}さんがTODO「{title}」を更新しました。',
     delete: '{name}さんがTODO「{title}」を削除しました。',
-    status: '{name}さんがTODO「{title}」のステータスを「{status}」に変更しました。'
+    status: '{name}さんがTODO「{title}」のステータスを「{status}」に変更しました。',
+    bg_update: '{name}さんが、トップ画面の背景画像を変更しました！📸',
+    anniv_create: '{name}さんが「つきあった日」を登録しました！💕',
+    anniv_update: '{name}さんが「つきあった日」を変更しました！💕',
+    anniv_delete: '{name}さんが「つきあった日」を削除しました！💔',
+    reminder_add: '{name}さんがリマインダー「{title}」を追加しました。'
   });
 
   // ユーザープロファイル
@@ -95,7 +100,9 @@ export default function MochiSettingsPage() {
 
       if (settingsRes.data) {
         if (settingsRes.data.mochi_prompt) setMochiPrompt(settingsRes.data.mochi_prompt);
-        if (settingsRes.data.todo_templates) setTodoTemplates(settingsRes.data.todo_templates);
+        if (settingsRes.data.todo_templates) {
+          setSystemTemplates(prev => ({ ...prev, ...settingsRes.data.todo_templates }));
+        }
       }
       if (profilesRes.data) setProfiles(profilesRes.data);
       if (vibeRes.data) setRelationship(vibeRes.data);
@@ -112,7 +119,7 @@ export default function MochiSettingsPage() {
     setSaving(true);
     const { data } = await supabase.from('couple_settings').select('id').single();
     if (data) {
-      await supabase.from('couple_settings').update({ mochi_prompt: mochiPrompt, todo_templates: todoTemplates }).eq('id', data.id);
+      await supabase.from('couple_settings').update({ mochi_prompt: mochiPrompt, todo_templates: systemTemplates }).eq('id', data.id);
     }
     setSaving(false);
     alert('保存しました');
@@ -195,8 +202,18 @@ export default function MochiSettingsPage() {
         {/* === キャラ設定タブ === */}
         {activeTab === 'character' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ background: 'rgba(147,112,219,0.08)', padding: '14px', borderRadius: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              もちの性格・口調・知識などを自由に設定できます。ここに書いた内容がSystem Promptとして使われます。
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ background: 'rgba(147,112,219,0.08)', padding: '14px', borderRadius: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', flex: 1, minWidth: '280px' }}>
+                もちの性格・口調や、システムメッセージの定型文を設定します。ここで設定した内容は「保存」ボタンで一括保存されます。
+              </div>
+              <button onClick={savePrompt} disabled={saving} style={{
+                background: '#9370db', color: 'white', padding: '12px 20px', borderRadius: '12px',
+                fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                whiteSpace: 'nowrap', flexShrink: 0, boxShadow: '0 4px 12px rgba(147,112,219,0.3)', border: 'none', cursor: 'pointer'
+              }}>
+                <Save size={18} />
+                {saving ? '保存中...' : '設定を保存'}
+              </button>
             </div>
             <textarea
               value={mochiPrompt}
@@ -208,13 +225,6 @@ export default function MochiSettingsPage() {
                 fontSize: '0.9rem', lineHeight: '1.6', resize: 'vertical', color: 'var(--text-main)', fontFamily: 'monospace'
               }}
             />
-            <button onClick={savePrompt} disabled={saving} style={{
-              background: '#9370db', color: 'white', padding: '14px', borderRadius: '12px',
-              fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-            }}>
-              <Save size={18} />
-              {saving ? '保存中...' : 'キャラ設定を保存'}
-            </button>
 
             <div style={{ marginTop: '16px', paddingTop: '24px', borderTop: '1px solid var(--glass-border)' }}>
               <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -222,26 +232,66 @@ export default function MochiSettingsPage() {
                 定型メッセージ設定
               </h3>
               <div style={{ background: 'rgba(147,112,219,0.08)', padding: '12px', borderRadius: '10px', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                TODO操作時にチャットへ送信されるメッセージです。{'{name}'}は操作した人、{'{title}'}はTODO名、{'{status}'}はステータス名に置き換わります。<br/>
-                ※ 上の「キャラ設定を保存」ボタンで一緒に保存されます。
+                各種操作時にチャットへ送信されるメッセージです。{'{name}'}は操作した人、{'{title}'}は項目名、{'{status}'}はステータス名に置き換わります。<br/>
+                ※ 上の「設定を保存」ボタンで一緒に保存されます。
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* TODO関連 */}
                 <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 作成時</label>
-                  <input value={todoTemplates.create} onChange={e => setTodoTemplates({...todoTemplates, create: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', marginBottom: '8px', paddingBottom: '4px', borderBottom: '1px solid #cbd5e1' }}>TODO関連</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 作成時</label>
+                      <input value={systemTemplates.create} onChange={e => setSystemTemplates({...systemTemplates, create: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 更新時</label>
+                      <input value={systemTemplates.update} onChange={e => setSystemTemplates({...systemTemplates, update: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 削除時</label>
+                      <input value={systemTemplates.delete} onChange={e => setSystemTemplates({...systemTemplates, delete: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO ステータス変更時</label>
+                      <input value={systemTemplates.status} onChange={e => setSystemTemplates({...systemTemplates, status: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                  </div>
                 </div>
+
+                {/* 記念日関連 */}
                 <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 更新時</label>
-                  <input value={todoTemplates.update} onChange={e => setTodoTemplates({...todoTemplates, update: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', marginBottom: '8px', paddingBottom: '4px', borderBottom: '1px solid #cbd5e1' }}>記念日関連</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>記念日 登録時</label>
+                      <input value={systemTemplates.anniv_create} onChange={e => setSystemTemplates({...systemTemplates, anniv_create: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>記念日 変更時</label>
+                      <input value={systemTemplates.anniv_update} onChange={e => setSystemTemplates({...systemTemplates, anniv_update: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>記念日 削除時</label>
+                      <input value={systemTemplates.anniv_delete} onChange={e => setSystemTemplates({...systemTemplates, anniv_delete: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                  </div>
                 </div>
+
+                {/* その他 */}
                 <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 削除時</label>
-                  <input value={todoTemplates.delete} onChange={e => setTodoTemplates({...todoTemplates, delete: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO ステータス変更時</label>
-                  <input value={todoTemplates.status} onChange={e => setTodoTemplates({...todoTemplates, status: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', marginBottom: '8px', paddingBottom: '4px', borderBottom: '1px solid #cbd5e1' }}>その他機能</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>トップ画面の背景変更時</label>
+                      <input value={systemTemplates.bg_update} onChange={e => setSystemTemplates({...systemTemplates, bg_update: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>リマインダー 追加時</label>
+                      <input value={systemTemplates.reminder_add} onChange={e => setSystemTemplates({...systemTemplates, reminder_add: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

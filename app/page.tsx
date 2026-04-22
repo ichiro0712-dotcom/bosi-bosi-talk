@@ -11,7 +11,7 @@ const AnniversaryModal = dynamic(() => import('./components/AnniversaryModal'), 
 export default function Home() {
   const [myProfile, setMyProfile] = useState<string | null>(null);
   const [isProfileChecking, setIsProfileChecking] = useState(true);
-  const [settings, setSettings] = useState<{ anniversary_date: string | null; top_image_url: string | null } | null>(null);
+  const [settings, setSettings] = useState<{ anniversary_date: string | null; top_image_url: string | null; todo_templates?: any } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAnnivModal, setShowAnnivModal] = useState(false);
   const [weekTodos, setWeekTodos] = useState<any[]>([]);
@@ -179,7 +179,9 @@ export default function Home() {
        
        const profile = localStorage.getItem('boshi_profile');
        const userName = profile === 'user_a' ? 'ミルク' : profile === 'user_b' ? 'メリー' : '誰か';
-       await postMochiMessage(`${userName}さんが、トップ画面の背景画像を変更しました！📸`);
+       const bgUpdateTemplate = settings?.todo_templates?.bg_update || '{name}さんが、トップ画面の背景画像を変更しました！📸';
+       const msgText = bgUpdateTemplate.replace('{name}', userName);
+       await postMochiMessage(msgText);
        
        // ローカルのStateだけを更新し、fetchSettings()のようなLoadingUIを出さない（ちらつき防止）
        setSettings(prev => prev ? { ...prev, top_image_url: data.publicUrl } : { anniversary_date: null, top_image_url: data.publicUrl });

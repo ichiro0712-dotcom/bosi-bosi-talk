@@ -84,11 +84,12 @@ export default function TodosPage() {
   const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth'>('date');
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
-  const [todoTemplates, setTodoTemplates] = useState({
+  const [todoTemplates, setTodoTemplates] = useState<any>({
     create: '{name}さんがTODO「{title}」を追加しました。',
     update: '{name}さんがTODO「{title}」を更新しました。',
     delete: '{name}さんがTODO「{title}」を削除しました。',
-    status: '{name}さんがTODO「{title}」のステータスを「{status}」に変更しました。'
+    status: '{name}さんがTODO「{title}」のステータスを「{status}」に変更しました。',
+    reminder_add: '{name}さんがリマインダー「{title}」を追加しました。'
   });
 
   useEffect(() => {
@@ -266,7 +267,10 @@ export default function TodosPage() {
 
       // もちに通知
       const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
-      await supabase.from('messages').insert([{ text: `${name}さんがリマインダー「${rMsg.trim()}」を追加しました。`, user_id: 'mochi' }]);
+      const msg = (todoTemplates.reminder_add || '{name}さんがリマインダー「{title}」を追加しました。')
+        .replace('{name}', name)
+        .replace('{title}', rMsg.trim());
+      await supabase.from('messages').insert([{ text: msg, user_id: 'mochi' }]);
     }
 
     setIsReminderModalOpen(false);
