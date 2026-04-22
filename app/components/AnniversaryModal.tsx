@@ -99,7 +99,7 @@ export default function AnniversaryModal({ onClose }: { onClose: () => void }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: "もち 🍡",
+            title: "もち ⚪️",
             body: combinedMessage,
             senderUserId: profile
           })

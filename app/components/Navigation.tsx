@@ -128,7 +128,7 @@ export default function Navigation() {
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>記念日設定</span>
                       </button>
                       <Link href="/mochi-settings" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', textDecoration: 'none', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>🍡</span>
+                        <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>⚪️</span>
                         <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>もちAI設定</span>
                       </Link>
                       <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
@@ -192,7 +192,7 @@ export default function Navigation() {
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>記念日設定</span>
                     </button>
                     <Link href="/mochi-settings" onClick={() => setShowMenu(false)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', textDecoration: 'none', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>
-                      <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>🍡</span>
+                      <span style={{ fontSize: '18px', width: '18px', display: 'flex', justifyContent: 'center' }}>⚪️</span>
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>もちAI設定</span>
                     </Link>
                     <button onClick={handleInstallClick} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-main)', width: '100%', textAlign: 'left', borderRadius: '8px' }}>

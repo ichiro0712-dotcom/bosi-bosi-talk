@@ -21,7 +21,7 @@ async function postMochiMessage(text: string) {
   try {
     const { data: subs } = await supabase.from('subscriptions').select('*');
     if (subs && subs.length > 0) {
-      const payload = JSON.stringify({ title: 'もち 🍡', body: text, icon: '/mochi.png' });
+      const payload = JSON.stringify({ title: 'もち ⚪️', body: text, icon: '/mochi.png' });
       for (const sub of subs) {
         try {
           await webPush.sendNotification(
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
             const reply = res.text?.trim();
             if (reply) messages.push(reply);
           } else {
-            messages.push(`今日期限のタスクがあるよ！\n${listStr}\n大丈夫かな？🍡`);
+            messages.push(`今日期限のタスクがあるよ！\n${listStr}\n大丈夫かな？⚪️`);
           }
         }
 
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
             const reply = res.text?.trim();
             if (reply) messages.push(reply);
           } else {
-            messages.push(`タスクの期限が近づいてるもち！\n${rListStr}\n順調だもちか？🍡`);
+            messages.push(`タスクの期限が近づいてるもち！\n${rListStr}\n順調だもちか？⚪️`);
           }
         }
       }
@@ -190,7 +190,7 @@ ${list}`;
         const reply = res.text?.trim();
         if (reply) messages.push(reply);
       } else {
-        messages.push(`月曜日だもち！今週はこれをやるんだね！\n${list}\nがんばろう🍡`);
+        messages.push(`月曜日だもち！今週はこれをやるんだね！\n${list}\nがんばろう⚪️`);
       }
     }
 

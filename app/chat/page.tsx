@@ -708,7 +708,7 @@ export default function ChatApp() {
             }
           }, 2000);
         })
-        .catch(err => setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（もちが応答できませんでした… ${err.message} 🍡）`, isMine: false, user_id: 'mochi', time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }), timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }) }]))
+        .catch(err => setMessages(prev => [...prev, { id: 'err_' + Date.now(), text: `（もちが応答できませんでした… ${err.message} ⚪️）`, isMine: false, user_id: 'mochi', time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }), timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }) }]))
         .finally(() => setIsMochiTyping(false));
       }
     }

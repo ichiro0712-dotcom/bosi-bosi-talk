@@ -84,6 +84,12 @@ export default function TodosPage() {
   const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth'>('date');
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
+  const [todoTemplates, setTodoTemplates] = useState({
+    create: '{name}さんがTODO「{title}」を追加しました。',
+    update: '{name}さんがTODO「{title}」を更新しました。',
+    delete: '{name}さんがTODO「{title}」を削除しました。',
+    status: '{name}さんがTODO「{title}」のステータスを「{status}」に変更しました。'
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem('boshi_profile');
@@ -101,7 +107,11 @@ export default function TodosPage() {
     return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
   }, [myProfile, isTodoModalOpen]);
 
-  const fetchAll = () => { fetchTodos(); fetchReminders(); };
+  const fetchSettings = async () => {
+    const { data } = await supabase.from('couple_settings').select('todo_templates').limit(1).single();
+    if (data && data.todo_templates) setTodoTemplates(data.todo_templates);
+  };
+  const fetchAll = () => { fetchTodos(); fetchReminders(); fetchSettings(); };
   const fetchTodos = async () => {
     const { data } = await supabase.from('todos').select('*').order('sort_order').order('created_at');
     if (data) setTodos(data);
@@ -144,6 +154,11 @@ export default function TodosPage() {
          title: title.trim(), description: description.trim() || null, 
          assignee, due_date: due_date || null, status, mochi_reminders, updated_at: new Date().toISOString() 
        }).eq('id', id);
+       
+       // もちに通知
+       const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
+       const msg = todoTemplates.update.replace('{name}', name).replace('{title}', title.trim());
+       await supabase.from('messages').insert([{ text: msg, user_id: 'mochi' }]);
     } else {
        await supabase.from('todos').insert([{ 
          title: title.trim(), description: description.trim() || null, 
@@ -153,7 +168,8 @@ export default function TodosPage() {
 
        // もちに通知
        const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
-       await supabase.from('messages').insert([{ text: `${name}さんがTODO「${title.trim()}」を追加しました。`, user_id: 'mochi' }]);
+       const msg = todoTemplates.create.replace('{name}', name).replace('{title}', title.trim());
+       await supabase.from('messages').insert([{ text: msg, user_id: 'mochi' }]);
     }
     setIsTodoModalOpen(false);
     setEditingTodo(null);
@@ -164,12 +180,26 @@ export default function TodosPage() {
     const kids = children(id);
     if (!confirm(kids.length > 0 ? `「${title}」と小タスク${kids.length}件を削除しますか？` : `「${title}」を削除しますか？`)) return;
     await supabase.from('todos').delete().eq('id', id); await fetchTodos();
+    
+    // もちに通知
+    const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
+    const msg = todoTemplates.delete.replace('{name}', name).replace('{title}', title);
+    await supabase.from('messages').insert([{ text: msg, user_id: 'mochi' }]);
   };
 
   // Immediate update toggles from Card
   const setStatus = async (id: string, status: string) => {
     await supabase.from('todos').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
     setTodos(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+
+    // もちに通知
+    const todo = todos.find(t => t.id === id);
+    if (todo && todo.status !== status) {
+      const name = myProfile === 'user_a' ? 'ミルク' : 'メリー';
+      const statusLabel = STATUS[status as keyof typeof STATUS]?.label || status;
+      const msg = todoTemplates.status.replace('{name}', name).replace('{title}', todo.title).replace('{status}', statusLabel);
+      await supabase.from('messages').insert([{ text: msg, user_id: 'mochi' }]);
+    }
   };
   const setAssignee = async (id: string, v: string) => {
     await supabase.from('todos').update({ assignee: v, updated_at: new Date().toISOString() }).eq('id', id);
@@ -343,7 +373,7 @@ export default function TodosPage() {
             {editingTodo.due_date && (
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
                 <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                  🍡 もちリマインド
+                  ⚪️ もちリマインド
                 </label>
                 <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '12px' }}>期限の〇日前に、もちがチャットでお知らせするもち！</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
@@ -531,7 +561,7 @@ export default function TodosPage() {
             )}
             {todo.mochi_reminders && todo.mochi_reminders.length > 0 && (
               <span style={{ fontSize: '0.65rem', padding: '3px 6px', borderRadius: '8px', background: '#f0ebff', color: '#9370db', fontWeight: 700 }}>
-                🍡
+                ⚪️
               </span>
             )}
 

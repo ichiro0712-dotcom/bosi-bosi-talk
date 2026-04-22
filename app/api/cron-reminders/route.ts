@@ -137,7 +137,7 @@ export async function GET(request: Request) {
       if (subs && subs.length > 0) {
          for (const msg of messagesToInsert) {
             const payload = JSON.stringify({
-              title: "もち 🍡",
+              title: "もち ⚪️",
               body: msg.text,
               icon: '/mochi.png'
             });

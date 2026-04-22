@@ -513,7 +513,7 @@ export async function POST(req: Request) {
     }
 
     if (!process.env.GEMINI_API_KEY) {
-      await insertMochiMessage("APIキーが未設定のため、お返事できませんでした🍡");
+      await insertMochiMessage("APIキーが未設定のため、お返事できませんでした⚪️");
       return NextResponse.json({ success: true, fake: true });
     }
 
@@ -691,7 +691,7 @@ export async function POST(req: Request) {
 
   } catch (err: any) {
     console.error("Mochi AI Error:", err);
-    await insertMochiMessage("（考え中にお餅が詰まってしまいました…🍡）");
+    await insertMochiMessage("（考え中にお餅が詰まってしまいました…⚪️）");
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -711,7 +711,7 @@ async function insertMochiMessage(text: string) {
     const { data: subs } = await supabase.from('subscriptions').select('*');
     if (subs && subs.length > 0) {
       const payload = JSON.stringify({
-        title: "もち 🍡",
+        title: "もち ⚪️",
         body: text,
         icon: '/mochi.png'
       });

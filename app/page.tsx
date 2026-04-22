@@ -37,7 +37,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: "もち 🍡",
+          title: "もち ⚪️",
           body: text,
           senderUserId: profile // 自身には通知を送らない制御用
         })

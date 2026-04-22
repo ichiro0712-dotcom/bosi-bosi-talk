@@ -59,6 +59,12 @@ export default function MochiSettingsPage() {
 
   // キャラ設定
   const [mochiPrompt, setMochiPrompt] = useState('');
+  const [todoTemplates, setTodoTemplates] = useState({
+    create: '{name}さんがTODO「{title}」を追加しました。',
+    update: '{name}さんがTODO「{title}」を更新しました。',
+    delete: '{name}さんがTODO「{title}」を削除しました。',
+    status: '{name}さんがTODO「{title}」のステータスを「{status}」に変更しました。'
+  });
 
   // ユーザープロファイル
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -80,14 +86,17 @@ export default function MochiSettingsPage() {
     setLoading(true);
     try {
       const [settingsRes, profilesRes, vibeRes, summariesRes, logsRes] = await Promise.all([
-        supabase.from('couple_settings').select('mochi_prompt').limit(1).single(),
+        supabase.from('couple_settings').select('mochi_prompt, todo_templates').limit(1).single(),
         supabase.from('mochi_user_profiles').select('*').order('user_id'),
         supabase.from('mochi_relationship').select('*').limit(1).single(),
         supabase.from('mochi_conversation_summaries').select('*').order('created_at', { ascending: false }).limit(10),
         supabase.from('mochi_memory_log').select('*').order('created_at', { ascending: false }).limit(30),
       ]);
 
-      if (settingsRes.data?.mochi_prompt) setMochiPrompt(settingsRes.data.mochi_prompt);
+      if (settingsRes.data) {
+        if (settingsRes.data.mochi_prompt) setMochiPrompt(settingsRes.data.mochi_prompt);
+        if (settingsRes.data.todo_templates) setTodoTemplates(settingsRes.data.todo_templates);
+      }
       if (profilesRes.data) setProfiles(profilesRes.data);
       if (vibeRes.data) setRelationship(vibeRes.data);
       if (summariesRes.data) setSummaries(summariesRes.data);
@@ -103,7 +112,7 @@ export default function MochiSettingsPage() {
     setSaving(true);
     const { data } = await supabase.from('couple_settings').select('id').single();
     if (data) {
-      await supabase.from('couple_settings').update({ mochi_prompt: mochiPrompt }).eq('id', data.id);
+      await supabase.from('couple_settings').update({ mochi_prompt: mochiPrompt, todo_templates: todoTemplates }).eq('id', data.id);
     }
     setSaving(false);
     alert('保存しました');
@@ -206,6 +215,36 @@ export default function MochiSettingsPage() {
               <Save size={18} />
               {saving ? '保存中...' : 'キャラ設定を保存'}
             </button>
+
+            <div style={{ marginTop: '16px', paddingTop: '24px', borderTop: '1px solid var(--glass-border)' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={18} color="#9370db" />
+                定型メッセージ設定
+              </h3>
+              <div style={{ background: 'rgba(147,112,219,0.08)', padding: '12px', borderRadius: '10px', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                TODO操作時にチャットへ送信されるメッセージです。{'{name}'}は操作した人、{'{title}'}はTODO名、{'{status}'}はステータス名に置き換わります。<br/>
+                ※ 上の「キャラ設定を保存」ボタンで一緒に保存されます。
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 作成時</label>
+                  <input value={todoTemplates.create} onChange={e => setTodoTemplates({...todoTemplates, create: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 更新時</label>
+                  <input value={todoTemplates.update} onChange={e => setTodoTemplates({...todoTemplates, update: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO 削除時</label>
+                  <input value={todoTemplates.delete} onChange={e => setTodoTemplates({...todoTemplates, delete: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>TODO ステータス変更時</label>
+                  <input value={todoTemplates.status} onChange={e => setTodoTemplates({...todoTemplates, status: e.target.value})} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.7)', fontSize: '0.85rem', outline: 'none' }} />
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
