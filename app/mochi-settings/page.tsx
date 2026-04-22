@@ -190,7 +190,7 @@ export default function MochiSettingsPage() {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 140px 20px' }}>
 
         {/* === キャラ設定タブ === */}
         {activeTab === 'character' && (
