@@ -551,17 +551,20 @@ export default function ChatApp() {
   }, [contextMenu]);
 
   // ===== 長押し =====
+  const longPressTriggered = useRef(false);
   const handleLongPressStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
     if (msg.is_deleted || msg.status === 'sending') return;
     const cx = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const cy = 'touches' in e ? e.touches[0].clientY : e.clientY;
     longPressStartPos.current = { x: cx, y: cy };
+    longPressTriggered.current = false;
     longPressTimer.current = setTimeout(() => {
       // 触覚フィードバック
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
       const target = document.getElementById(`msg-bubble-${msg.id}`);
       const rect = target ? target.getBoundingClientRect() : null;
       setContextMenu({ msg, rect, x: cx, y: cy });
+      longPressTriggered.current = true;
     }, 500);
   };
   const handleLongPressMove = (e: React.TouchEvent) => {
@@ -571,9 +574,14 @@ export default function ChatApp() {
     // 10px以上動いた場合は誤タップ（スクロール）とみなしてキャンセル
     if (Math.hypot(dx, dy) > 10) handleLongPressEnd();
   };
-  const handleLongPressEnd = () => { 
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } 
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     longPressStartPos.current = null;
+  };
+  // 画像クリック時: 長押し後のクリックは無視
+  const handleImageClickSafe = (msgId: string | number) => {
+    if (longPressTriggered.current) { longPressTriggered.current = false; return; }
+    handleImageClick(msgId);
   };
 
   // ===== メニューアクション =====
@@ -715,13 +723,42 @@ export default function ChatApp() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    setShowAttachMenu(false); const file = e.target.files?.[0]; if (!file || !isDBReady) return;
-    const tempId = 'temp_' + Date.now(); const tempUrl = URL.createObjectURL(file);
-    setMessages(prev => [...prev, { id: tempId, text: '', isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: tempUrl }]);
-    const filePath = `uploads/${Date.now()}_${file.name}`;
-    const { error } = await supabase.storage.from('chat_media').upload(filePath, file);
-    if (!error) { const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath); await supabase.from('messages').insert([{ text: "", image_url: data.publicUrl, user_id: myProfile! }]); triggerPush("画像が送信されました", data.publicUrl); }
-    else { setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' as const } : m)); }
+    setShowAttachMenu(false);
+    const files = e.target.files; if (!files || files.length === 0 || !isDBReady) return;
+    const fileArray = Array.from(files);
+    // inputをリセット（同じファイルを再選択できるように）
+    e.target.value = '';
+
+    // 全ファイルにtempメッセージを作成
+    const tempEntries = fileArray.map((file, i) => {
+      const tempId = 'temp_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substring(7);
+      const tempUrl = URL.createObjectURL(file);
+      return { tempId, tempUrl, file };
+    });
+    setMessages(prev => [
+      ...prev,
+      ...tempEntries.map(({ tempId, tempUrl }) => ({
+        id: tempId, text: '', isMine: true, status: 'sending' as const, time: '送信中',
+        timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
+        imageUrl: tempUrl, user_id: myProfile || undefined,
+      }))
+    ]);
+
+    // 順次アップロード（並列だと順番が崩れる可能性があるため）
+    for (const { tempId, file } of tempEntries) {
+      const filePath = `uploads/${Date.now()}_${Math.random().toString(36).substring(7)}_${file.name}`;
+      const { error } = await supabase.storage.from('chat_media').upload(filePath, file);
+      if (!error) {
+        const { data } = supabase.storage.from('chat_media').getPublicUrl(filePath);
+        await supabase.from('messages').insert([{ text: "", image_url: data.publicUrl, user_id: myProfile! }]);
+      } else {
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' as const } : m));
+      }
+    }
+    // まとめて1回のpush通知
+    if (fileArray.length > 0) {
+      triggerPush(fileArray.length === 1 ? "画像が送信されました" : `画像が${fileArray.length}枚送信されました`);
+    }
   };
 
   const handleStampSave = async (base64Image: string) => {
@@ -857,7 +894,7 @@ export default function ChatApp() {
                         <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>メッセージの送信を取り消しました</span>
                       </div>
                     ) : (!msg.text && msg.imageUrl) ? (
-                      <img loading="lazy" src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && handleImageClick(msg.id)} style={{ width:'150px', height:'150px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
+                      <img id={`msg-bubble-${msg.id}`} loading="lazy" src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && handleImageClickSafe(msg.id)} style={{ width:'150px', height:'150px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.isMine ? 'flex-end' : 'flex-start' }}>
                         {/* リプライプレビュー（LINE風・投稿の上にくっつく部分） */}
@@ -901,7 +938,7 @@ export default function ChatApp() {
                         zIndex: 2, position: 'relative'
                       }}>
                         {msg.text && renderTextWithLinks(msg.text)}
-                        {msg.imageUrl && <img loading="lazy" src={msg.imageUrl} alt="" onClick={() => handleImageClick(msg.id)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
+                        {msg.imageUrl && <img loading="lazy" src={msg.imageUrl} alt="" onClick={() => handleImageClickSafe(msg.id)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
                         
                         {/* PCホバー時のリアクション追加ボタン */}
                         {hoveredMsgId === msg.id && typeof msg.id === 'number' && !msg.is_deleted && window.matchMedia('(hover: hover)').matches && (
@@ -982,7 +1019,7 @@ export default function ChatApp() {
         <div style={{ position: 'relative', padding: '12px 16px', borderTop: '1px solid var(--glass-border)', background: 'var(--glass-bg)' }}>
           {showAttachMenu && (
             <div className="animate-slide-up" style={{ position:'absolute', bottom:'76px', left:'16px', background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'20px', padding:'14px', boxShadow:'var(--shadow-soft)', display:'flex', gap:'18px', zIndex:50, border:'1px solid var(--glass-border)' }}>
-              <input type="file" id="media-upload" accept="image/*,video/*" style={{display:'none'}} onChange={handleFileUpload} />
+              <input type="file" id="media-upload" accept="image/*,video/*" multiple style={{display:'none'}} onChange={handleFileUpload} />
               {[
                 { icon: <ImageIcon size={22} />, label: '画像', bg: '#e2e8f0', color: '#475569', onClick: () => document.getElementById('media-upload')?.click() },
                 { icon: <Smile size={22} />, label: 'スタンプ', bg: '#fce7f3', color: '#db2777', onClick: () => { setShowAttachMenu(false); setShowStampPicker(true); } },
@@ -1016,8 +1053,9 @@ export default function ChatApp() {
               <Reply size={14} color="#9370db" />
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:'0.68rem', fontWeight:700, color:'#9370db' }}>{SPEAKER(replyTo.user_id)}</div>
-                <div style={{ fontSize:'0.73rem', color:'#64748b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{replyTo.text || '画像'}</div>
+                <div style={{ fontSize:'0.73rem', color:'#64748b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{replyTo.text || (replyTo.imageUrl ? '📷 画像' : '...')}</div>
               </div>
+              {replyTo.imageUrl && !replyTo.text && <img src={replyTo.imageUrl} alt="" style={{ width:'32px', height:'32px', objectFit:'cover', borderRadius:'6px', flexShrink:0 }} />}
               <button onClick={() => setReplyTo(null)} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8' }}><X size={16} /></button>
             </div>
           )}
