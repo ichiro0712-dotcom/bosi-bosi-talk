@@ -96,8 +96,11 @@ export async function GET(request: Request) {
             const res = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
               contents: [{ role: 'user', parts: [{ text: `今日期限のタスクがあるよ。キャラを崩さず「今日はこれやる予定だけど大丈夫？」的な感じで声をかけて。タスク一覧:\n${listStr}` }] }],
-              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 300 }
+              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
             });
+            if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+              console.warn('cron-mochi (today-due): MAX_TOKENS truncation detected', { len: res.text?.length });
+            }
             const reply = res.text?.trim();
             if (reply) messages.push(reply);
           } else {
@@ -116,8 +119,11 @@ export async function GET(request: Request) {
             const res = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
               contents: [{ role: 'user', parts: [{ text: `以下のタスクが期限に近づいているよ（もちリマインド設定）。キャラを崩さず「完了まであと●日だけど順調だもちか？」的に声をかけて。タスク一覧:\n${rListStr}` }] }],
-              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 300 }
+              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
             });
+            if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+              console.warn('cron-mochi (mochi-remind): MAX_TOKENS truncation detected', { len: res.text?.length });
+            }
             const reply = res.text?.trim();
             if (reply) messages.push(reply);
           } else {
@@ -150,8 +156,8 @@ export async function GET(request: Request) {
       // 先週追加されたリマインダー
       const { data: newReminders } = await supabase.from('scheduled_reminders').select('message').gte('created_at', weekAgo);
       
-      // 直近のチャット（文脈用、最大30件）
-      const { data: recentMsgs } = await supabase.from('messages').select('text, user_id').neq('user_id', 'mochi').gte('created_at', weekAgo).order('created_at', { ascending: false }).limit(30);
+      // 直近のチャット（文脈用、最大10件）
+      const { data: recentMsgs } = await supabase.from('messages').select('text, user_id').neq('user_id', 'mochi').gte('created_at', weekAgo).order('created_at', { ascending: false }).limit(10);
 
       const list = weekTodos && weekTodos.length > 0 ? weekTodos.map(t => {
         const who = t.assignee === 'user_a' ? 'ミルク' : t.assignee === 'user_b' ? 'メリー' : '2人';
@@ -185,8 +191,11 @@ ${list}`;
         const res = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
-          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 600 }
+          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingBudget: 0 } }
         });
+        if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          console.warn('cron-mochi (monday-weekly): MAX_TOKENS truncation detected', { len: res.text?.length });
+        }
         const reply = res.text?.trim();
         if (reply) messages.push(reply);
       } else {
