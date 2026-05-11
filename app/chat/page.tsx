@@ -31,6 +31,30 @@ function renderTextWithLinks(text: string) {
   );
 }
 
+// 文字列が「絵文字のみ」かどうか判定（最大3個まで大きく表示）
+// Intl.Segmenter で grapheme cluster ベースで判定（複合絵文字対応）
+function isEmojiOnly(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  // 通常文字（ASCII英数記号、ひらがな、カタカナ、漢字）が含まれていたら絵文字onlyではない
+  if (/[A-Za-z0-9!-~ぁ-んァ-ヶ一-龯ー]/.test(trimmed)) return false;
+  // grapheme単位で数える（複合絵文字も1個と判定）
+  let count = 0;
+  if (typeof (Intl as any).Segmenter === 'function') {
+    const seg = new (Intl as any).Segmenter('en', { granularity: 'grapheme' });
+    for (const _ of seg.segment(trimmed)) {
+      count++;
+      if (count > 3) return false;
+    }
+  } else {
+    // フォールバック: コードポイント数で判定（複合絵文字は分割されるが許容）
+    count = Array.from(trimmed).filter(c => c.trim()).length;
+    if (count > 6) return false; // 複合絵文字は1絵文字=2-3コードポイント
+  }
+  return count >= 1;
+}
+
 function urlB64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
@@ -362,12 +386,16 @@ export default function ChatApp() {
             setMessages(prev => {
               if (prev.find(p => p.id === newMsg.id)) return prev;
               const updated = [...prev];
-              // tempメッセージを1つだけ探して置換: 同じ送信者 + テキスト一致 or 画像送信（テキスト空）
+              // tempメッセージを1つだけ探して置換: 同じ送信者 + テキスト一致 or 画像URL一致（スタンプ） or 両方画像（アップロード画像）
               const tempIdx = updated.findIndex(m => {
                 if (!m.id.toString().startsWith('temp_')) return false;
                 if (m.user_id !== newMsg.user_id) return false;
-                if (m.text === newMsg.text && m.text !== '') return true;
-                if (!m.text && !newMsg.text && m.imageUrl && newMsg.image_url) return true;
+                // テキストメッセージ: 内容一致
+                if (m.text && m.text === newMsg.text) return true;
+                // スタンプ: 同一URL（ローカルパス）一致
+                if (!m.text && !newMsg.text && m.imageUrl && newMsg.image_url && m.imageUrl === newMsg.image_url) return true;
+                // アップロード画像: tempはblob:URL、DBはhttps URLなので一致しない → 両方画像で内容空ならマッチ
+                if (!m.text && !newMsg.text && m.imageUrl?.startsWith('blob:') && newMsg.image_url?.startsWith('http')) return true;
                 return false;
               });
               if (tempIdx !== -1) {
@@ -892,6 +920,10 @@ export default function ChatApp() {
                     {msg.is_deleted ? (
                       <div style={{ padding: '8px 14px', borderRadius: '16px', background: 'rgba(0,0,0,0.02)', border: '1px dashed #e2e8f0' }}>
                         <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>メッセージの送信を取り消しました</span>
+                      </div>
+                    ) : (!msg.imageUrl && msg.text && isEmojiOnly(msg.text)) ? (
+                      <div id={`msg-bubble-${msg.id}`} className="msg-bubble" style={{ padding: '4px 0', fontSize: '3rem', lineHeight: '1.1', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.08))', userSelect: 'text' }}>
+                        {msg.text}
                       </div>
                     ) : (!msg.text && msg.imageUrl) ? (
                       <img id={`msg-bubble-${msg.id}`} loading="lazy" src={msg.imageUrl} alt="stamp" onClick={() => !msg.imageUrl?.includes('/stamps/') && handleImageClickSafe(msg.id)} style={{ width:'150px', height:'150px', objectFit:'contain', filter:'drop-shadow(0 4px 6px rgba(0,0,0,0.1))', cursor: msg.imageUrl?.includes('/stamps/') ? 'default' : 'pointer' }} />
