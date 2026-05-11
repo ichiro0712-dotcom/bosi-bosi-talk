@@ -799,7 +799,7 @@ export default function ChatApp() {
 
   const sendStamp = (filename: string) => {
     setShowStampPicker(false); const url = `/stamps/${filename}`; const tid = 'temp_' + Date.now();
-    setMessages(prev => [...prev, { id: tid, text: '', isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: url }]);
+    setMessages(prev => [...prev, { id: tid, text: '', isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: url, user_id: myProfile || undefined }]);
     triggerPush("スタンプ！", url);
     if (isDBReady && myProfile) supabase.from('messages').insert([{ text: "", image_url: url, user_id: myProfile }]).then();
   };
