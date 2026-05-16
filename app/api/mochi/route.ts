@@ -875,7 +875,12 @@ async function callHubCancel(args: any): Promise<string | null> {
     return JSON.stringify({ success: false, error: 'task_id is required' });
   }
   try {
-    const data = await callHubMcp('hub_cancel', { task_id: args.task_id });
+    // callback_origin: 'mochi' を渡すと Hub の inferOrigin が mochi と判定し、
+    // 元の hub_chat 起動時の origin と一致して cancel が許可される。
+    const data = await callHubMcp('hub_cancel', {
+      task_id: args.task_id,
+      callback_origin: 'mochi',
+    });
     const text: string = data?.result?.content?.[0]?.text ?? 'キャンセル受付';
     return JSON.stringify({ success: true, message: text });
   } catch (e: any) {
