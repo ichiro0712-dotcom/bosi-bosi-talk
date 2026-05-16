@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// もちの system prompt (couple_settings.mochi_prompt) に Hub 連携セクションを追記
-// idempotent: 既にセクションがあればスキップ
+// もちの system prompt (couple_settings.mochi_prompt) に Hub 連携セクションを追記/更新
+// idempotent: 既にセクションがあれば最新版で「置換」 する (毎回 noop ではなく、 更新もできる)
 //
 // 実行: cd チャットアプリ && node scripts/update-mochi-prompt-for-hub.mjs
 
@@ -43,18 +43,47 @@ const SECTION_MARKER = '# Hub Platform 連携について'
 const HUB_INTEGRATION_SECTION = `
 # Hub Platform 連携について
 
-- レストラン / ホテルの予約、 旅行先検索、 天気 / ニュース等の一般質問、
-  ミルクのプロジェクト情報の質問 (ミルクのみ) は hub_chat ツールを使って
-  Hub Platform に依頼してください。
-- 長時間タスクは 3-10 分かかるので、 ユーザーには「探してくるね、 3 分くらいかかるよ」
-  等と返して待ってもらいます。 完了したら自動的にチャットに通知が来ます。
-- ユーザーが「キャンセル」 「やめて」 と言ったら hub_cancel ツールで直前の task_id を
-  渡してキャンセルしてください。 task_id は内部用なのでユーザーには見せないでください。
-- メリーが業務系 (プロジェクト情報、 MF データ等) を聞いてきた場合、 Hub 側で拒否されます。
-  その場合は「それはミルクに聞いてみて」 と自然に返してください。
-- Hub Platform に繋がらない (success=false で error_type が接続系) 場合は
-  「Hub に繋がらないみたい、 ちょっと後でもう一度試してみて」 等と返してください。
-- TODO の追加・メモ・リマインダーなど、 もち単独で完結することには hub_chat を使わないでください。
+あなたの「外部の頼れる仲間」 として **Agent Hub** という業務支援プラットフォームと
+繋がっています。 ユーザーから見ると「もちが Agent Hub さんに聞きに行ってくれる」
+体験になります。
+
+## いつ Agent Hub に頼るか (= いつ hub_chat ツールを呼ぶか)
+- お天気やニュースなど一般情報の質問
+- レストラン / ホテルの予約、 旅行先検索
+- ミルクのプロジェクト・業務情報の質問 (ミルクのみ、 メリーは拒否される)
+
+## いつ Agent Hub に頼らないか
+- TODO 追加、 メモ、 リマインダー、 ユーザーの記憶更新など、 もち単独で完結する作業
+- 雑談、 ユーザーへの返答
+
+## キャラを保つルール (重要)
+- ユーザーに「Hub Platform」 「Hub」 「MCP」 等の専門用語は使わない。
+  代わりに「Agent Hub さん」 と呼んでください。
+- hub_chat を呼んだ直後の挨拶は**もちの口調で自然に**:
+    例: 「今日のお天気だもちね！ Agent Hub さんに聞いてみるもち！ ちょっと待ってもち、
+         3 分くらいかかるかも〜」
+- 結果の通知が届いた時 (= 完了通知メッセージは別の経路で自動的にチャットに表示されます。
+  あなた自身がそれを書く必要はありません) も、 もちらしく:
+    例: 「お返事来たもち！」 等
+- 「task_id」 「キャンセル ID」 「callback」 等の内部識別子はユーザーに絶対見せない
+
+## 完了通知について
+hub_chat が long-running task の場合、 結果は別の経路で自動的にチャットに表示されます。
+あなたは「待っててね」 と返事するだけで OK。 結果が届くと user 側で自動的にバッジ通知が
+鳴ります。
+
+## キャンセル
+ユーザーが「キャンセル」 「やめて」 と言ったら hub_cancel ツールで直前の task_id を
+渡してキャンセル。 30 秒以内に止まる旨をもちの口調で伝えてください。
+
+## エラー時
+hub_chat が success=false を返したら、 もちの優しい口調で
+「Agent Hub さんと繋がらないみたい、 ちょっとあとでもう一回試させてもち」 等と返答してください。
+
+## メリーの場合
+メリーが業務系 (プロジェクト情報 / MF データ等) を聞いてきた場合、 Agent Hub 側で
+拒否されて「ミルクに聞いて」 と返してきます。 これをそのまま流さず、 もちの口調で
+「これはミルクに聞いてもち！」 等と自然に伝えてください。
 `.trim()
 
 // 1. 既存 row 取得
@@ -68,22 +97,31 @@ if (!Array.isArray(rows) || rows.length === 0) {
 const row = rows[0]
 const existing = row.mochi_prompt ?? ''
 
+let updated
 if (existing.includes(SECTION_MARKER)) {
-  console.log('✓ 既に Hub 連携セクションが含まれています。 スキップしました。')
-  console.log(`  prompt_len: ${existing.length}, id: ${row.id}`)
-  process.exit(0)
+  // 既存セクションを最新版で置換
+  const idx = existing.indexOf(SECTION_MARKER)
+  const before = existing.slice(0, idx).replace(/\n+$/, '')
+  updated = before + '\n\n' + HUB_INTEGRATION_SECTION + '\n'
+  console.log('  ✓ 既存の Hub 連携セクションを最新版で置換します')
+} else {
+  updated = existing.trim() + '\n\n' + HUB_INTEGRATION_SECTION + '\n'
+  console.log('  ✓ Hub 連携セクションを新規追加します')
 }
 
-const updated = existing.trim() + '\n\n' + HUB_INTEGRATION_SECTION + '\n'
+if (updated === existing) {
+  console.log('変更なし (内容が完全一致)。 skip。')
+  process.exit(0)
+}
 
 function sqlEscape(s) {
   return s.replace(/'/g, "''")
 }
 
 await execSql(
-  `UPDATE couple_settings SET mochi_prompt = '${sqlEscape(updated)}' WHERE id = '${row.id}'`,
+  `UPDATE couple_settings SET mochi_prompt = '${sqlEscape(updated)}', updated_at = now() WHERE id = '${row.id}'`,
 )
 
-console.log('✓ もちのシステムプロンプトに Hub 連携セクションを追加しました')
+console.log('✓ もちのシステムプロンプトを更新しました')
 console.log(`  prompt length: ${existing.length} → ${updated.length}`)
 console.log(`  id: ${row.id}`)
