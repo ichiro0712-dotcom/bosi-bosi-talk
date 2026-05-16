@@ -178,7 +178,43 @@ const mochiTools: FunctionDeclaration[] = [
       },
       required: ["title_keyword"]
     }
-  }
+  },
+  {
+    name: "hub_chat",
+    description: [
+      "Hub Platform (Ichiro が運用している業務支援プラットフォーム) に自然言語で依頼を投げる。",
+      "予約 (レストラン / ホテル)、 旅行先検索、 一般質問 (天気 / ニュース)、 ",
+      "ミルクのプロジェクト情報 (ミルクが質問した時のみ) などを Hub の AI エージェントが処理する。",
+      "長時間タスク (予約等で 3-10 分) は task_id が即座に返り、 完了したら Hub から自動的にチャットに通知が来る。",
+      "ユーザーが『予約して』 『調べて』 『天気教えて』 『ニュース教えて』 など Hub に投げるべき依頼をした時に呼ぶ。",
+      "通常の雑談や TODO 追加など、 もち単独で完結することには使わない。",
+    ].join(""),
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        message: {
+          type: Type.STRING,
+          description: "Hub Platform への依頼内容 (自然言語、 ユーザーの要望を整理して送る)",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "hub_cancel",
+    description: [
+      "Hub Platform で実行中の task をキャンセルする。",
+      "ユーザーが『やっぱりキャンセル』 『やめて』 と言った時に呼ぶ。",
+      "task_id は直前の hub_chat の応答 task_id を使う。",
+    ].join(""),
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        task_id: { type: Type.STRING, description: "キャンセル対象の task_id" },
+      },
+      required: ["task_id"],
+    },
+  },
 ];
 
 // ===== メモリ層の取得 =====
@@ -265,7 +301,7 @@ async function getLayer3(): Promise<any[]> {
 
 // ===== Function Call実行 =====
 
-async function executeFunctionCall(name: string, args: any): Promise<string | null> {
+async function executeFunctionCall(name: string, args: any, _ctx?: { userId?: string }): Promise<string | null> {
   try {
     if (name === 'update_user_profile') {
       const category = args.category || 'other';
@@ -645,11 +681,33 @@ export async function POST(req: Request) {
     let aiReply = '';
 
     const actionReports: string[] = [];
+    // hub_chat/hub_cancel の応答は functionResponse として LLM に戻す (定型文表示しない)
+    const hubFunctionResponses: { name: string; response: any }[] = [];
+    let hasHubCall = false;
+
     if (candidate?.content?.parts) {
       for (const part of candidate.content.parts) {
         if (part.functionCall && part.functionCall.name) {
-          const report = await executeFunctionCall(part.functionCall.name, part.functionCall.args || {});
-          if (report) actionReports.push(report);
+          const fnName = part.functionCall.name;
+          const fnArgs = part.functionCall.args || {};
+
+          if (fnName === 'hub_chat' || fnName === 'hub_cancel') {
+            hasHubCall = true;
+            const resultStr =
+              fnName === 'hub_chat'
+                ? await callHubChat(fnArgs, { userId })
+                : await callHubCancel(fnArgs);
+            let parsed: any;
+            try {
+              parsed = resultStr ? JSON.parse(resultStr) : { success: false };
+            } catch {
+              parsed = { success: false, raw: resultStr };
+            }
+            hubFunctionResponses.push({ name: fnName, response: parsed });
+          } else {
+            const report = await executeFunctionCall(fnName, fnArgs, { userId });
+            if (report) actionReports.push(report);
+          }
         }
         if (part.text) {
           aiReply += part.text;
@@ -657,8 +715,32 @@ export async function POST(req: Request) {
       }
     }
 
-    // テキスト応答がない場合（Function Callのみの場合）、再度テキスト生成
-    if (!aiReply.trim() && candidate?.content?.parts?.some((p: any) => p.functionCall)) {
+    // hub_chat/hub_cancel が呼ばれた場合は functionResponse を渡して LLM に自然な返答を生成させる
+    if (hasHubCall) {
+      const followUp = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          ...apiMessages,
+          { role: 'model', parts: candidate?.content?.parts ?? [] },
+          {
+            role: 'user',
+            parts: hubFunctionResponses.map((fr) => ({
+              functionResponse: { name: fr.name, response: fr.response },
+            })),
+          },
+        ],
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.7,
+          maxOutputTokens: 4000,
+        },
+      });
+      const followUpText = followUp.text?.trim() || '';
+      if (followUpText) {
+        aiReply = aiReply.trim() ? aiReply + '\n' + followUpText : followUpText;
+      }
+    } else if (!aiReply.trim() && candidate?.content?.parts?.some((p: any) => p.functionCall)) {
+      // 既存挙動: hub 以外のツールだけ呼ばれてテキスト応答がない場合の follow-up
       const followUp = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [...apiMessages, { role: 'model', parts: candidate.content.parts }],
@@ -693,6 +775,116 @@ export async function POST(req: Request) {
     console.error("Mochi AI Error:", err);
     await insertMochiMessage("（考え中にお餅が詰まってしまいました…⚪️）");
     return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// ===== Hub Platform 連携 =====
+
+const HUB_MCP_URL = process.env.HUB_MCP_URL || 'https://hub-platform-blond.vercel.app/api/mcp';
+
+function userIdToHint(userId?: string): 'milk' | 'merry' | null {
+  if (userId === 'user_a') return 'milk';
+  if (userId === 'user_b') return 'merry';
+  return null;
+}
+
+async function callHubMcp(toolName: string, args: Record<string, unknown>): Promise<any> {
+  const token = process.env.HUB_MCP_TOKEN;
+  if (!token) {
+    throw new Error('HUB_MCP_TOKEN env not set');
+  }
+  const resp = await fetch(HUB_MCP_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: `mochi-${Date.now()}`,
+      method: 'tools/call',
+      params: { name: toolName, arguments: args },
+    }),
+  });
+  const bodyText = await resp.text();
+  if (!resp.ok) {
+    throw Object.assign(new Error(`Hub HTTP ${resp.status}: ${bodyText.slice(0, 200)}`), {
+      status: resp.status,
+      bodyText,
+    });
+  }
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    throw new Error(`Hub returned non-JSON: ${bodyText.slice(0, 200)}`);
+  }
+}
+
+async function callHubChat(args: any, ctx?: { userId?: string }): Promise<string | null> {
+  const userHint = userIdToHint(ctx?.userId);
+  if (!userHint) {
+    return JSON.stringify({
+      success: false,
+      error: 'Hub への依頼は user_a (ミルク) か user_b (メリー) のみ可能です',
+    });
+  }
+  if (!args.message || typeof args.message !== 'string') {
+    return JSON.stringify({ success: false, error: 'message is required' });
+  }
+
+  try {
+    const data = await callHubMcp('hub_chat', {
+      message: args.message,
+      user_hint: userHint,
+      callback_origin: 'mochi',
+    });
+
+    const text: string = data?.result?.content?.[0]?.text ?? '応答が空でした';
+    const taskId: string | undefined = data?.result?._meta?.task_id;
+    const status: string | undefined = data?.result?._meta?.status;
+    const estimatedSeconds: number | undefined = data?.result?._meta?.estimated_seconds;
+
+    if (taskId) {
+      const minsHint = estimatedSeconds
+        ? `${Math.max(1, Math.ceil(estimatedSeconds / 60))} 分くらい`
+        : '数分';
+      return JSON.stringify({
+        success: true,
+        message: text,
+        task_id: taskId,
+        status: status ?? null,
+        estimated_seconds: estimatedSeconds ?? null,
+        note: `長時間タスクです。 完了したら自動的にチャットに通知が来ます。 ユーザーには「探してくるね、 ${minsHint}かかるよ」 等と返してください。 task_id は内部用なのでユーザーには言わないでください。`,
+      });
+    }
+
+    return JSON.stringify({ success: true, message: text });
+  } catch (e: any) {
+    console.error('[hub_chat] error:', e);
+    return JSON.stringify({
+      success: false,
+      error: 'Hub Platform に接続できませんでした',
+      detail: String(e?.message ?? e).slice(0, 200),
+      fallback_hint: 'ユーザーには「Hub に接続できないみたい、 ちょっと後でもう一度試してみて」 等と返してください。',
+    });
+  }
+}
+
+async function callHubCancel(args: any): Promise<string | null> {
+  if (!args.task_id || typeof args.task_id !== 'string') {
+    return JSON.stringify({ success: false, error: 'task_id is required' });
+  }
+  try {
+    const data = await callHubMcp('hub_cancel', { task_id: args.task_id });
+    const text: string = data?.result?.content?.[0]?.text ?? 'キャンセル受付';
+    return JSON.stringify({ success: true, message: text });
+  } catch (e: any) {
+    console.error('[hub_cancel] error:', e);
+    return JSON.stringify({
+      success: false,
+      error: 'キャンセルに失敗しました',
+      detail: String(e?.message ?? e).slice(0, 200),
+    });
   }
 }
 
