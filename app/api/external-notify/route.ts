@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import webPush from 'web-push';
+import { GoogleGenAI } from '@google/genai';
 
 export const maxDuration = 30;
 
@@ -97,10 +98,17 @@ export async function POST(req: Request) {
   const primaryImageUrl: string | null =
     Array.isArray(image_urls) && image_urls.length > 0 ? image_urls[0] : null;
 
+  // Hub からの素の応答を「もちキャラ」 で言い換える。
+  // 失敗時は元のテキストにそのままフォールバック (通知が消えるよりはマシ)。
+  const mochiText = await rewriteInMochiVoice(text, origin_user_hint).catch((e) => {
+    console.warn('[external-notify] rewriteInMochiVoice failed, fallback to raw text:', e);
+    return text;
+  });
+
   const { error: insertErr } = await supabase.from('messages').insert([
     {
       user_id: 'mochi',
-      text,
+      text: mochiText,
       image_url: primaryImageUrl,
     },
   ]);
@@ -130,10 +138,10 @@ export async function POST(req: Request) {
       .select('id, endpoint, p256dh, auth');
 
     if (subs && subs.length > 0) {
-      const truncatedBody = text.length > 100 ? text.slice(0, 100) + '...' : text;
+      const notifBody = mochiText.length > 100 ? mochiText.slice(0, 100) + '...' : mochiText;
       const payload = JSON.stringify({
         title: 'もち ⚪️',
-        body: truncatedBody,
+        body: notifBody,
         icon: '/mochi.png',
         tag: task_id ? `mochi-${task_id}` : undefined,
       });
@@ -163,3 +171,81 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+// Hub から届いた素の応答を、 もちのキャラ (DB の couple_settings.mochi_prompt) で
+// 言い換える。 「ねえねえ、 Agent Hub さんに聞いてみたもち！」 → 「答えはこうだったもち：◯◯」
+// の 2 段構えで、 ユーザーから見て自然な体験にする。
+async function rewriteInMochiVoice(rawText: string, userHint?: string | null): Promise<string> {
+  if (!process.env.GEMINI_API_KEY) return rawText;
+  if (!rawText || rawText.trim().length === 0) return rawText;
+
+  // couple_settings からキャラ設定を取得 (Hub 連携セクションは除いて、 純粋なキャラ口調だけ抽出)
+  let characterPrompt = '';
+  try {
+    const { data: settings } = await supabase
+      .from('couple_settings')
+      .select('mochi_prompt')
+      .limit(1)
+      .single();
+    const full = settings?.mochi_prompt ?? '';
+    // 「# Hub Platform 連携について」 セクション以降はキャラ口調と無関係なので削る
+    const marker = '# Hub Platform 連携について';
+    const idx = full.indexOf(marker);
+    characterPrompt = idx >= 0 ? full.slice(0, idx).trim() : full.trim();
+  } catch {
+    // fallback: 既定キャラ
+    characterPrompt =
+      'あなたはミルクとメリーというカップルをサポートするAI「もち」です。 語尾に「もち」 をつける丁寧でない口調。';
+  }
+
+  const userLabel = userHint === 'milk' ? 'ミルク' : userHint === 'merry' ? 'メリー' : null;
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  const systemInstruction = [
+    characterPrompt,
+    '',
+    '=== あなたの今のタスク ===',
+    'あなたは Agent Hub (= 業務支援プラットフォーム) に依頼を投げて、 返事を受け取った直後です。',
+    'Agent Hub の応答は「素っ気ない丁寧語」 で書かれているので、 そのまま流すとあなたのキャラが壊れます。',
+    'これを「もち」 のキャラと口調で言い換えて、 自然なチャット 1 メッセージとして返してください。',
+    '',
+    '構成の例:',
+    '- 冒頭: 「お待たせ、 戻ってきたもち！」 や 「Agent Hub さんからお返事きたもち！」 等の短い挨拶',
+    '- 本体: 受け取った内容を、 もちの口調 (語尾「もち」 を必要に応じて、 親しい話し言葉) で言い換え',
+    '  - 長すぎる場合は要点を残して短くしても OK',
+    '  - 内容は正しく伝える (数字・店名・固有名詞などは変えない)',
+    '- 末尾: 短く感想や問いかけ (任意、 不要なら省略)',
+    '',
+    '注意:',
+    '- 「task_id」 「キャンセル ID」 などの内部識別子は絶対にユーザーに見せない',
+    '- 1 メッセージで完結する自然な日本語チャットにする (見出しや箇条書きを過剰に使わない)',
+    userLabel ? `- 今このメッセージを受け取るのは ${userLabel} です` : '',
+    '- もち本人を 3 人称で呼ばない (「もちが」 等は避け、 「うち」 「あたし」 などキャラに合わせる)',
+    '- Agent Hub から「分かりません」 「権限がありません」 等の否定的応答だった場合も、 もちの優しい言い方で伝える',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const userPrompt = [
+    '=== Agent Hub からの素の応答 (これを言い換える) ===',
+    rawText,
+    '',
+    '=== 出力 ===',
+    '上記をもちのキャラで自然なチャット 1 メッセージにしてください。 出力はメッセージ本文のみ (前置きや「以下のように...」 等の説明は不要)。',
+  ].join('\n');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    config: {
+      systemInstruction,
+      temperature: 0.7,
+      maxOutputTokens: 1000,
+    },
+  });
+
+  const out = response.text?.trim();
+  if (!out) return rawText;
+  return out;
+}
+
