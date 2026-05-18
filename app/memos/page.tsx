@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../utils/supabase/client';
-import { ChevronLeft, Plus, Trash2, GripVertical, Check } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, GripVertical } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -52,20 +52,15 @@ function renderContentWithLinks(text: string): React.ReactNode {
 // --- 並び替え可能なメモアイテム ---
 function SortableMemoItem({
   memo,
-  isReordering,
   onOpen,
   onDelete,
-  onLongPress,
 }: {
   memo: Memo;
-  isReordering: boolean;
   onOpen: (memo: Memo) => void;
   onDelete: (e: React.MouseEvent, id: number) => void;
-  onLongPress: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: memo.id,
-    disabled: !isReordering,
   });
 
   const style: React.CSSProperties = {
@@ -73,88 +68,64 @@ function SortableMemoItem({
     transition,
     background: 'rgba(255,255,255,0.85)',
     borderRadius: '14px',
-    padding: '16px',
-    cursor: isReordering ? 'grab' : 'pointer',
     border: '1px solid rgba(0,0,0,0.06)',
     boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.04)',
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'stretch',
     opacity: isDragging ? 0.85 : 1,
-    touchAction: isReordering ? 'none' : 'auto',
-  };
-
-  // 長押し検知用 (非並び替え時のみ)
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
-  const longPressTriggered = useRef(false);
-
-  const handlePointerDown = () => {
-    if (isReordering) return;
-    longPressTriggered.current = false;
-    longPressTimer.current = setTimeout(() => {
-      longPressTriggered.current = true;
-      // 振動 (対応端末のみ)
-      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-        try { navigator.vibrate?.(30); } catch {}
-      }
-      onLongPress();
-    }, 500);
-  };
-
-  const handlePointerUp = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  const handlePointerMove = () => {
-    // 指が動いたら長押しキャンセル
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  const handleClick = () => {
-    if (isReordering) return;
-    if (longPressTriggered.current) {
-      longPressTriggered.current = false;
-      return;
-    }
-    onOpen(memo);
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerMove={handlePointerMove}
-      onPointerCancel={handlePointerUp}
-      onClick={handleClick}
-      {...(isReordering ? { ...attributes, ...listeners } : {})}
-    >
-      {isReordering && (
-        <div style={{ marginRight: '10px', color: '#9370db', display: 'flex', alignItems: 'center' }}>
-          <GripVertical size={18} />
-        </div>
-      )}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        <h4 style={{ margin: '0 0 4px', fontSize: '0.95rem', color: 'var(--text-main)' }}>{memo.title || '名称未設定'}</h4>
-        <div style={{ fontSize: '0.8rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {memo.content || 'まだ内容がありません'}
-        </div>
-        <div style={{ fontSize: '0.65rem', color: '#cbd5e1', marginTop: '4px' }}>
-          {new Date(memo.updated_at).toLocaleString('ja-JP')}
-        </div>
+    <div ref={setNodeRef} style={style}>
+      {/* ドラッグハンドル (常時左側に表示) */}
+      <div
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="並び替え"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 4px 0 8px',
+          color: '#cbd5e1',
+          cursor: 'grab',
+          touchAction: 'none',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none',
+          flexShrink: 0,
+        }}
+      >
+        <GripVertical size={18} />
       </div>
-      {!isReordering && (
+
+      {/* メイン領域 (タップで開く) */}
+      <div
+        onClick={() => onOpen(memo)}
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 16px 16px 4px',
+          cursor: 'pointer',
+          minWidth: 0,
+        }}
+      >
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <h4 style={{ margin: '0 0 4px', fontSize: '0.95rem', color: 'var(--text-main)' }}>{memo.title || '名称未設定'}</h4>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {memo.content || 'まだ内容がありません'}
+          </div>
+          <div style={{ fontSize: '0.65rem', color: '#cbd5e1', marginTop: '4px' }}>
+            {new Date(memo.updated_at).toLocaleString('ja-JP')}
+          </div>
+        </div>
         <button onClick={e => onDelete(e, memo.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e2e8f0', padding: '8px', flexShrink: 0 }}>
           <Trash2 size={16} />
         </button>
-      )}
+      </div>
     </div>
   );
 }
@@ -165,7 +136,6 @@ export default function MemoPage() {
   const [isDBReady, setIsDBReady] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
-  const [isReordering, setIsReordering] = useState(false);
   const [isContentEditing, setIsContentEditing] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const editingIdRef = useRef<number | null>(null);
@@ -373,26 +343,10 @@ export default function MemoPage() {
       {/* === 一覧画面 === */}
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
         <h3 style={{ margin: 0, fontSize: '1.2rem' }}>メモ</h3>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {isReordering ? (
-            <button
-              onClick={() => setIsReordering(false)}
-              style={{ background: '#10b981', color: 'white', padding: '8px 16px', borderRadius: '10px', fontWeight: 600, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', border: 'none', cursor: 'pointer' }}
-            >
-              <Check size={16} /> 完了
-            </button>
-          ) : (
-            <button onClick={createMemo} style={{ background: '#9370db', color: 'white', padding: '8px 16px', borderRadius: '10px', fontWeight: 600, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', border: 'none', cursor: 'pointer' }}>
-              <Plus size={16} /> 新規メモ
-            </button>
-          )}
-        </div>
+        <button onClick={createMemo} style={{ background: '#9370db', color: 'white', padding: '8px 16px', borderRadius: '10px', fontWeight: 600, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', border: 'none', cursor: 'pointer' }}>
+          <Plus size={16} /> 新規メモ
+        </button>
       </div>
-      {isReordering && (
-        <div style={{ padding: '8px 16px', background: 'rgba(147,112,219,0.08)', fontSize: '0.75rem', color: '#6d49c8', textAlign: 'center' }}>
-          ドラッグして並び替え、完了で確定
-        </div>
-      )}
       <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
         {memos.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8' }}>メモがありません</div>
@@ -404,10 +358,8 @@ export default function MemoPage() {
                   <SortableMemoItem
                     key={memo.id}
                     memo={memo}
-                    isReordering={isReordering}
                     onOpen={openMemo}
                     onDelete={deleteMemo}
-                    onLongPress={() => setIsReordering(true)}
                   />
                 ))}
               </div>
