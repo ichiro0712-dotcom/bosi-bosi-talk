@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Save, ChevronLeft, Bot, User, Heart, FileText, ScrollText, Copy } from 'lucide-react';
+import { Save, ChevronLeft, Bot, User, Heart, FileText, ScrollText, Copy, Sparkles } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import Link from 'next/link';
 
@@ -53,7 +53,7 @@ const vibeLabels: Record<string, string> = {
 };
 
 export default function MochiSettingsPage() {
-  const [activeTab, setActiveTab] = useState<'character' | 'profiles' | 'vibe' | 'summaries' | 'log'>('character');
+  const [activeTab, setActiveTab] = useState<'capabilities' | 'character' | 'profiles' | 'vibe' | 'summaries' | 'log'>('capabilities');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -156,6 +156,7 @@ export default function MochiSettingsPage() {
   };
 
   const tabs = [
+    { id: 'capabilities' as const, label: 'できること', icon: Sparkles },
     { id: 'character' as const, label: 'キャラ設定', icon: Bot },
     { id: 'profiles' as const, label: 'ユーザー情報', icon: User },
     { id: 'vibe' as const, label: '関係性', icon: Heart },
@@ -198,6 +199,9 @@ export default function MochiSettingsPage() {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 140px 20px' }}>
+
+        {/* === できることタブ === */}
+        {activeTab === 'capabilities' && <CapabilitiesTab />}
 
         {/* === キャラ設定タブ === */}
         {activeTab === 'character' && (
@@ -445,6 +449,211 @@ export default function MochiSettingsPage() {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
+// CapabilitiesTab: もちが「今できること」を非エンジニア向けに紹介するタブ
+// 機能を追加したらここも更新する (CLAUDE.md にルール記載)
+// =====================================================================
+
+type CapabilityItem = {
+  title: string;
+  desc: string;
+  examples: string[];
+};
+
+type CapabilityCategory = {
+  name: string;
+  emoji: string;
+  color: string;
+  items: CapabilityItem[];
+};
+
+const CAPABILITIES: CapabilityCategory[] = [
+  {
+    name: '日常のサポート',
+    emoji: '📋',
+    color: '#7c3aed',
+    items: [
+      {
+        title: 'TODO の追加・整理',
+        desc: '「○○やらなきゃ」と話しかけると TODO リストに追加。担当者や期限も指定できる。完了・遅れの状態も会話で更新できる。',
+        examples: [
+          '「明日までに引っ越し屋さんに連絡しなきゃ」',
+          '「ジムの登録、もう終わったよ」',
+          '「○○のタスク削除して」',
+        ],
+      },
+      {
+        title: 'リマインダーのセット',
+        desc: '時間や曜日を指定すると、その時刻にプッシュ通知を送ってくれる。毎日・毎週の繰り返しも OK。',
+        examples: [
+          '「毎朝 7 時に水を飲むようリマインドして」',
+          '「毎週月曜の朝にゴミ出し」',
+          '「○○のリマインダー止めて」',
+        ],
+      },
+      {
+        title: '今日のご飯を提案',
+        desc: 'メモに登録した「ご飯リスト」(🤖 マーク ON のメモ) の中から、栄養バランスや気分を考えて 3 案ほど提案。事前に「今日食べたもの」「気分・予算」を聞いてくれる。',
+        examples: [
+          '「今日のご飯どうしよう」',
+          '「何食べる？」',
+          '「ご飯提案して」',
+        ],
+      },
+    ],
+  },
+  {
+    name: '記憶と思い出し',
+    emoji: '🧠',
+    color: '#db2777',
+    items: [
+      {
+        title: 'ミルク・メリーの情報を覚える',
+        desc: '会話の中で新しくわかった事実 (好み、健康、仕事の話など) を自動でユーザー情報に追記。「ユーザー情報」タブで内容を確認・編集できる。',
+        examples: [
+          '「最近ジム通い始めたんだ」 → 健康カテゴリに自動記録',
+          '「○○が好きなんだよね」 → 趣味カテゴリに自動記録',
+        ],
+      },
+      {
+        title: '過去の会話を検索 (古い会話も)',
+        desc: 'ベクトル検索 + 全文検索のハイブリッドで、ずっと前に話した話題でも引っ張り出せる。「ジムの話」みたいな曖昧な言い方でも、意味が近い会話を拾ってくれる。',
+        examples: [
+          '「前に話したあのレストランどこだっけ」',
+          '「ジムの話、いつしてた？」',
+          '「○○さんの件、なんて言ってたっけ」',
+        ],
+      },
+      {
+        title: '2 人の関係性を見守る',
+        desc: '会話の雰囲気から、2 人の関係性 (ラブラブ / 普通 / お疲れ気味など) を自動で判定して記録。「関係性」タブで確認できる。',
+        examples: [
+          '記念日の話で盛り上がる → ワクワクに更新',
+          '忙しい話が続く → お疲れ気味に更新',
+        ],
+      },
+    ],
+  },
+  {
+    name: 'メモ・リスト管理',
+    emoji: '📝',
+    color: '#0891b2',
+    items: [
+      {
+        title: 'メモの作成・更新・削除',
+        desc: '会話の流れでメモに情報を書き溜められる。タイトル指定で既存メモへの追記もできる。',
+        examples: [
+          '「買い物リストに卵をメモして」',
+          '「行きたい店リストに○○を追加」',
+          '「○○メモ削除して」',
+        ],
+      },
+      {
+        title: '「もち用メモ」の活用',
+        desc: 'メモ画面で 🤖 (もち用) を ON にすると、もちが提案や検索の時に参照する。ご飯リスト、行きたい店リストなど用途は自由。',
+        examples: [
+          'メモ「ご飯リスト」を作って 🤖 ON',
+          '「今日のご飯提案して」と聞くと参照される',
+        ],
+      },
+    ],
+  },
+  {
+    name: '外部に頼む (Agent Hub)',
+    emoji: '🌐',
+    color: '#ea580c',
+    items: [
+      {
+        title: 'お天気・ニュース・調べもの',
+        desc: '一般的な情報の質問を Agent Hub という連携先 AI に依頼。長時間タスクはバックグラウンドで進み、結果が届くと自動で通知される。',
+        examples: [
+          '「今日の東京の天気教えて」',
+          '「最新のニュースまとめて」',
+          '「○○について調べて」',
+        ],
+      },
+      {
+        title: 'レストラン・ホテルの予約',
+        desc: 'Agent Hub 経由で予約系のタスクを依頼。3-10 分かかる場合もあるが、完了したらチャットに通知が来る。途中でキャンセルも可能。',
+        examples: [
+          '「○○で和食のお店を予約して」',
+          '「やっぱりキャンセル」',
+        ],
+      },
+    ],
+  },
+];
+
+function CapabilitiesTab() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ background: 'rgba(147,112,219,0.08)', padding: '14px', borderRadius: '12px', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+        もちにできることの一覧です。 普段のチャットで自然に話しかければ、 もちが適切な機能を選んで動きます。
+        新しいことを試したいときは下の例文を参考にしてみてください。
+      </div>
+
+      {CAPABILITIES.map((cat) => (
+        <div key={cat.name} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 style={{
+            margin: 0, fontSize: '1rem', fontWeight: 700,
+            color: cat.color, display: 'flex', alignItems: 'center', gap: '8px',
+          }}>
+            <span style={{ fontSize: '1.3rem' }}>{cat.emoji}</span> {cat.name}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {cat.items.map((item) => (
+              <div
+                key={item.title}
+                style={{
+                  background: 'rgba(255,255,255,0.75)',
+                  padding: '16px', borderRadius: '14px',
+                  border: '1px solid var(--glass-border)',
+                  display: 'flex', flexDirection: 'column', gap: '10px',
+                }}
+              >
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  {item.title}
+                </h4>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                  {item.desc}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: cat.color, marginBottom: '2px' }}>
+                    こう話しかけてみて
+                  </div>
+                  {item.examples.map((ex, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        fontSize: '0.78rem', color: '#475569',
+                        padding: '6px 10px',
+                        background: 'rgba(255,255,255,0.6)',
+                        borderRadius: '8px',
+                        borderLeft: `3px solid ${cat.color}`,
+                      }}
+                    >
+                      {ex}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div style={{
+        marginTop: '8px',
+        background: 'rgba(255,237,213,0.5)', padding: '14px', borderRadius: '12px',
+        fontSize: '0.75rem', color: '#92400e', lineHeight: '1.6',
+      }}>
+        💡 もちの機能を増やしたい / もちにこれもやって欲しい、 と思ったら開発者に伝えてください。
+        新機能を追加した時はこのページも一緒に更新されます。
       </div>
     </div>
   );

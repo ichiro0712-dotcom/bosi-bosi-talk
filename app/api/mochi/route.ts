@@ -180,6 +180,42 @@ const mochiTools: FunctionDeclaration[] = [
     }
   },
   {
+    name: "search_messages",
+    description: [
+      "過去のチャット履歴を検索する。 ベクトル検索 (意味類似) と全文検索 (文字一致) を組み合わせたハイブリッド検索。",
+      "ユーザーが『前に話した○○の件』『以前話したあれ』のように過去の会話を参照しようとした時、",
+      "あるいはもち自身が文脈を確認したい時に使う。 直近30件は既にcontextに入っているので、",
+      "それ以前 (古い会話) を調べたい時に呼ぶのが効果的。",
+    ].join(""),
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: "検索したい話題やキーワード (自然言語でOK、例: 『ジムの話』『田中さんの件』)" },
+        limit: { type: Type.NUMBER, description: "返す件数 (デフォルト 15、 最大 30)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "suggest_meal",
+    description: [
+      "今日のご飯を提案する。 ユーザーが『今日のご飯どうしよう』『何食べよう』『ご飯提案して』と言った時に呼ぶ。",
+      "事前にユーザーに 2 つ質問してから呼ぶこと: ",
+      "  (1) 今日食べたもの・食べる予定のもの、 ",
+      "  (2) 気分・予算・食べたいもの等の希望。",
+      "回答を得てからこの tool を呼ぶと、 ユーザーがメモに登録した『ご飯リスト』 (もち用フラグ ON のメモ) を取得して返すので、",
+      "そこから栄養バランスを考えて 3 案ほど提案する。",
+    ].join(""),
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        eaten_today: { type: Type.STRING, description: "今日食べたもの・食べる予定のもの (ユーザーの回答をそのまま)" },
+        mood_and_constraints: { type: Type.STRING, description: "気分・予算・希望 (ユーザーの回答をそのまま)" },
+      },
+      required: ["eaten_today", "mood_and_constraints"],
+    },
+  },
+  {
     name: "hub_chat",
     description: [
       "Hub Platform (Ichiro が運用している業務支援プラットフォーム) に自然言語で依頼を投げる。",
@@ -297,6 +333,111 @@ async function getLayer3(): Promise<any[]> {
 
   if (!messages || messages.length === 0) return [];
   return messages.reverse();
+}
+
+// ===== ハイブリッド検索 (ベクトル + 全文) =====
+
+const EMBED_MODEL = 'gemini-embedding-001';
+const EMBED_DIMS = 768;
+
+async function embedText(text: string): Promise<number[] | null> {
+  if (!process.env.GEMINI_API_KEY) return null;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: `models/${EMBED_MODEL}`,
+          content: { parts: [{ text }] },
+          outputDimensionality: EMBED_DIMS,
+        }),
+      },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.embedding?.values ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// 未埋め込みの最大 N 件を背景で補完。失敗しても無視。
+async function backfillMissingEmbeddings(maxCount = 30): Promise<void> {
+  try {
+    const { data: pending } = await supabase
+      .from('messages')
+      .select('id, text')
+      .is('embedding', null)
+      .not('text', 'is', null)
+      .neq('text', '')
+      .order('id', { ascending: false })
+      .limit(maxCount);
+    if (!pending || pending.length === 0) return;
+
+    await Promise.all(
+      pending.map(async (m) => {
+        const vec = await embedText(m.text);
+        if (vec) {
+          await supabase.from('messages').update({ embedding: vec }).eq('id', m.id);
+        }
+      }),
+    );
+  } catch (err) {
+    console.error('backfillMissingEmbeddings error:', err);
+  }
+}
+
+// ハイブリッド検索: pgvector の RPC を優先、失敗時は全文一致のみで fallback
+// ベクトル重視: vec_weight=0.7, full_weight=0.3
+async function hybridSearchMessages(
+  query: string,
+  limit: number,
+): Promise<Array<{ id: number; text: string; user_id: string; created_at: string; score: number }>> {
+  // 1) クエリの埋め込みを取得
+  const vec = await embedText(query);
+
+  // 2) RPC でハイブリッド検索 (ベクトル + 全文の RRF)
+  if (vec) {
+    try {
+      const { data, error } = await supabase.rpc('match_messages_hybrid', {
+        query_text: query,
+        query_embedding: vec,
+        match_limit: limit,
+        vec_weight: 0.7,
+        full_weight: 0.3,
+      });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map((r: any) => ({
+          id: r.id,
+          text: r.text,
+          user_id: r.user_id,
+          created_at: r.created_at,
+          score: r.score ?? 0,
+        }));
+      }
+    } catch (err) {
+      console.error('hybrid RPC failed, fallback to ILIKE:', err);
+    }
+  }
+
+  // 3) Fallback: 全文一致のみ
+  const { data: fullArr } = await supabase
+    .from('messages')
+    .select('id, text, user_id, created_at')
+    .not('text', 'is', null)
+    .neq('text', '')
+    .ilike('text', `%${query}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return (fullArr || []).map((m: any, i: number) => ({
+    id: m.id,
+    text: m.text,
+    user_id: m.user_id,
+    created_at: m.created_at,
+    score: 1 / (i + 1),
+  }));
 }
 
 // ===== Function Call実行 =====
@@ -466,11 +607,80 @@ async function executeFunctionCall(name: string, args: any, _ctx?: { userId?: st
         await supabase.from('mochi_memory_log').insert([{ action: 'delete_memo', detail: { title: match.title } }]);
         return `🗑️ メモを削除したもち！\n・「${match.title}」`;
       }
+
+    } else if (name === 'search_messages' || name === 'suggest_meal') {
+      // この 2 つは executeFunctionCall ではなく functionResponse として LLM に返す経路で処理する
+      // (executeFunctionCall は「ユーザーに見せる定型報告」専用のため、 結果を context に
+      //  入れたい検索系/データ取得系は別経路を使う)
+      // この分岐は呼ばれないはず (POST 側で先に処理される) だが、 安全側で no-op
+      return null;
     }
     return null;
   } catch (err) {
     console.error(`Function call ${name} failed:`, err);
     return null;
+  }
+}
+
+// ===== 検索系 tool: functionResponse 経由で LLM に context を返す =====
+
+async function executeDataFunction(name: string, args: any): Promise<any> {
+  try {
+    if (name === 'search_messages') {
+      const query = (args.query || '').toString().trim();
+      const limit = Math.min(Math.max(Number(args.limit) || 15, 1), 30);
+      if (!query) return { success: false, error: 'query is required' };
+
+      // 未埋め込みメッセージを軽く補完してから検索 (背景で済ませて即検索でもOK)
+      // 同期で30件補完 → 検索精度を上げる
+      await backfillMissingEmbeddings(30);
+
+      const results = await hybridSearchMessages(query, limit);
+      if (results.length === 0) {
+        return { success: true, message: '該当する過去メッセージは見つかりませんでした', results: [] };
+      }
+      // user_id を読みやすい表記に
+      const enriched = results.map((r) => ({
+        speaker: r.user_id === 'user_a' ? 'ミルク' : r.user_id === 'user_b' ? 'メリー' : 'もち',
+        text: r.text,
+        when: new Date(r.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }),
+        score: Number(r.score?.toFixed(4) || 0),
+      }));
+      return { success: true, results: enriched };
+    }
+
+    if (name === 'suggest_meal') {
+      const eaten = (args.eaten_today || '').toString();
+      const mood = (args.mood_and_constraints || '').toString();
+
+      // is_mochi_tool=true のメモを全件取得
+      const { data: toolMemos } = await supabase
+        .from('memos')
+        .select('id, title, content')
+        .eq('is_mochi_tool', true);
+
+      if (!toolMemos || toolMemos.length === 0) {
+        return {
+          success: false,
+          error: 'もち用フラグのメモが見つかりません',
+          hint: 'ユーザーに「『ご飯リスト』みたいなメモを作って、 🤖 マーク (もち用) を ON にしてね」と伝えてください',
+        };
+      }
+
+      const lists = toolMemos.map((m: any) => `【${m.title}】\n${m.content || '(空)'}`).join('\n\n');
+      return {
+        success: true,
+        eaten_today: eaten,
+        mood_and_constraints: mood,
+        meal_lists: lists,
+        instruction: '上の meal_lists からのみ選び、 eaten_today で食べたものとの栄養バランス、 mood_and_constraints の希望を考慮して 3 案ほどに絞って提案してください。 リストにないものは絶対に提案しないこと。',
+      };
+    }
+
+    return { success: false, error: `unknown data function: ${name}` };
+  } catch (err: any) {
+    console.error(`Data function ${name} failed:`, err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
 
@@ -563,7 +773,7 @@ export async function POST(req: Request) {
       getLayer3(),
       supabase.from('scheduled_reminders').select('*').eq('is_active', true).order('next_run_at', { ascending: true }),
       supabase.from('todos').select('*').neq('status', 'done').order('due_date', { ascending: true, nullsFirst: false }),
-      supabase.from('memos').select('id, title, content').order('updated_at', { ascending: false }).limit(10)
+      supabase.from('memos').select('id, title, content, is_mochi_tool').order('updated_at', { ascending: false }).limit(10)
     ]);
 
     const characterPrompt = settings.data?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
@@ -620,8 +830,12 @@ export async function POST(req: Request) {
       '',
       '=== 共有メモ ===',
       memosRes.data && memosRes.data.length > 0
-        ? memosRes.data.map((m: any) => `- 「${m.title}」: ${(m.content || '').substring(0, 100)}${(m.content || '').length > 100 ? '...' : ''}`).join('\n')
+        ? memosRes.data.map((m: any) => {
+            const mark = m.is_mochi_tool ? '🤖 ' : '';
+            return `- ${mark}「${m.title}」: ${(m.content || '').substring(0, 100)}${(m.content || '').length > 100 ? '...' : ''}`;
+          }).join('\n')
         : '（メモはありません）',
+      '（🤖 マーク付きはユーザーが「もち用」と指定したメモ。 ご飯リスト等、 もちが提案系 tool で参照する想定）',
       '',
       '=== 過去の会話のまとめ ===',
       layer2,
@@ -645,6 +859,25 @@ export async function POST(req: Request) {
       '- 「メモに何がある？」→ 上の共有メモ情報をもとに教える。',
       '- 重要: TODO追加、メモ作成、リマインダー追加などのアクションは、必ず対応するツールを呼んで実行してね。テキストだけで「やった」と言うのは絶対ダメ。',
       '- ツール名やDB操作の詳細はユーザーに言わないでね。自然に会話して。',
+      '',
+      '=== ご飯の提案フロー (重要) ===',
+      '- ユーザーが「今日のご飯どうしよう」「何食べる？」「ご飯提案して」のように食事提案を求めた時の手順:',
+      '  1) まず必ず質問する:',
+      '     - 「今日食べたもの・食べる予定のものある？」',
+      '     - 「気分や予算、 食べたいもの希望ある？」',
+      '  2) ユーザーから 2 つの回答が揃ったら、 suggest_meal ツールを呼ぶ。',
+      '     引数: eaten_today (1 の回答), mood_and_constraints (2 の回答)。',
+      '  3) tool が返した meal_lists の中身からのみ選んで、 栄養バランスや希望を考えてもちらしく 3 案ほど提案。',
+      '  4) もし suggest_meal が success=false を返したら、 「ご飯リストがまだないみたいだから、',
+      '     メモに作って 🤖 マーク (もち用) を ON にしてね」 と優しく案内する。',
+      '- 「ご飯リスト作って」と言われたら、 create_memo でメモを作ったあと「🤖 マークを ON にしてね」 と案内すること。',
+      '  (もち側からフラグを ON にする機能はないので、 必ず UI から ON にしてもらう)',
+      '',
+      '=== 過去会話の検索 ===',
+      '- ユーザーが「前に話した○○の件」「いつだっけあの話」のように 過去の発言を思い出そうとした時、',
+      '  search_messages tool を使って検索する。 直近30件は context にすでに入っているので、',
+      '  それ以前を調べたい時に有効。 引数 query には自然な言葉で OK (例: "ジムの話", "田中さんの件")。',
+      '- 検索結果が見つかれば、 もちの口調で「○月○日にこんな話してたよ〜」と引用しつつ伝える。',
     ].join('\n');
 
     // 会話履歴をGemini形式に変換
@@ -681,9 +914,10 @@ export async function POST(req: Request) {
     let aiReply = '';
 
     const actionReports: string[] = [];
-    // hub_chat/hub_cancel の応答は functionResponse として LLM に戻す (定型文表示しない)
-    const hubFunctionResponses: { name: string; response: any }[] = [];
-    let hasHubCall = false;
+    // データ取得系 tool (hub_chat/hub_cancel/search_messages/suggest_meal) は
+    // functionResponse として LLM に戻し、 自然言語で応答してもらう (定型文ではない)
+    const dataFunctionResponses: { name: string; response: any }[] = [];
+    let hasDataCall = false;
 
     if (candidate?.content?.parts) {
       for (const part of candidate.content.parts) {
@@ -692,7 +926,7 @@ export async function POST(req: Request) {
           const fnArgs = part.functionCall.args || {};
 
           if (fnName === 'hub_chat' || fnName === 'hub_cancel') {
-            hasHubCall = true;
+            hasDataCall = true;
             const resultStr =
               fnName === 'hub_chat'
                 ? await callHubChat(fnArgs, { userId })
@@ -703,7 +937,11 @@ export async function POST(req: Request) {
             } catch {
               parsed = { success: false, raw: resultStr };
             }
-            hubFunctionResponses.push({ name: fnName, response: parsed });
+            dataFunctionResponses.push({ name: fnName, response: parsed });
+          } else if (fnName === 'search_messages' || fnName === 'suggest_meal') {
+            hasDataCall = true;
+            const result = await executeDataFunction(fnName, fnArgs);
+            dataFunctionResponses.push({ name: fnName, response: result });
           } else {
             const report = await executeFunctionCall(fnName, fnArgs, { userId });
             if (report) actionReports.push(report);
@@ -715,8 +953,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // hub_chat/hub_cancel が呼ばれた場合は functionResponse を渡して LLM に自然な返答を生成させる
-    if (hasHubCall) {
+    // データ取得系 tool が呼ばれた場合は functionResponse を渡して LLM に自然な返答を生成させる
+    if (hasDataCall) {
       const followUp = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [
@@ -724,7 +962,7 @@ export async function POST(req: Request) {
           { role: 'model', parts: candidate?.content?.parts ?? [] },
           {
             role: 'user',
-            parts: hubFunctionResponses.map((fr) => ({
+            parts: dataFunctionResponses.map((fr) => ({
               functionResponse: { name: fr.name, response: fr.response },
             })),
           },

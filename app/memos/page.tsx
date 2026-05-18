@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../utils/supabase/client';
-import { ChevronLeft, Plus, Trash2, GripVertical } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, GripVertical, Bot } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -22,7 +22,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-type Memo = { id: number; title: string; content: string; updated_at: string; position: number | null };
+type Memo = { id: number; title: string; content: string; updated_at: string; position: number | null; is_mochi_tool: boolean };
 
 // --- URL リンク化ヘルパー ---
 const URL_REGEX = /(https?:\/\/[^\s<>"'）」、。]+)/g;
@@ -114,7 +114,14 @@ function SortableMemoItem({
         }}
       >
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <h4 style={{ margin: '0 0 4px', fontSize: '0.95rem', color: 'var(--text-main)' }}>{memo.title || '名称未設定'}</h4>
+          <h4 style={{ margin: '0 0 4px', fontSize: '0.95rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {memo.is_mochi_tool && (
+              <span title="もちが使うメモ" style={{ display: 'inline-flex', color: '#9370db', flexShrink: 0 }}>
+                <Bot size={14} />
+              </span>
+            )}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memo.title || '名称未設定'}</span>
+          </h4>
           <div style={{ fontSize: '0.8rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {memo.content || 'まだ内容がありません'}
           </div>
@@ -136,6 +143,7 @@ export default function MemoPage() {
   const [isDBReady, setIsDBReady] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editIsMochiTool, setEditIsMochiTool] = useState(false);
   const [isContentEditing, setIsContentEditing] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const editingIdRef = useRef<number | null>(null);
@@ -207,7 +215,17 @@ export default function MemoPage() {
     setActiveMemoId(memo.id);
     setEditTitle(memo.title);
     setEditContent(memo.content);
+    setEditIsMochiTool(!!memo.is_mochi_tool);
     setIsContentEditing(false);
+  };
+
+  const toggleMochiTool = async () => {
+    const id = editingIdRef.current;
+    if (!id) return;
+    const newVal = !editIsMochiTool;
+    setEditIsMochiTool(newVal);
+    setMemos(prev => prev.map(m => m.id === id ? { ...m, is_mochi_tool: newVal } : m));
+    await supabase.from('memos').update({ is_mochi_tool: newVal }).eq('id', id);
   };
 
   const closeMemo = () => {
@@ -308,6 +326,21 @@ export default function MemoPage() {
             style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '1.15rem', fontWeight: 600, outline: 'none' }}
             placeholder="タイトル"
           />
+          <button
+            onClick={toggleMochiTool}
+            title={editIsMochiTool ? 'もちが使うメモにする (ON)' : 'もちが使うメモにする (OFF)'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '4px',
+              padding: '6px 10px', borderRadius: '8px',
+              background: editIsMochiTool ? '#9370db' : 'transparent',
+              color: editIsMochiTool ? 'white' : '#9370db',
+              border: editIsMochiTool ? 'none' : '1px solid #c4b5fd',
+              cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            <Bot size={14} /> もち用
+          </button>
         </div>
         {isContentEditing ? (
           <textarea
