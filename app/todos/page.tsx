@@ -560,10 +560,17 @@ export default function TodosPage() {
                 {Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>{i+1}月</option>)}
               </select>
               <span>から</span>
-              <select value={rIntervalMonths} onChange={e => setRIntervalMonths(Number(e.target.value))}
-                style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-                {[2,3,4,6,12].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <input
+                type="number" inputMode="numeric"
+                min={2} max={120} step={1}
+                value={rIntervalMonths}
+                onChange={e => {
+                  const n = Number(e.target.value);
+                  if (!Number.isFinite(n)) return;
+                  setRIntervalMonths(Math.min(120, Math.max(2, Math.floor(n))));
+                }}
+                style={{ width: '72px', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none', textAlign: 'center' }}
+              />
               <span>ヶ月に1回</span>
             </div>
 
