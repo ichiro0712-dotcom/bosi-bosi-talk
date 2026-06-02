@@ -86,6 +86,8 @@ export default function TodosPage() {
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
   const [rIntervalMonths, setRIntervalMonths] = useState(2);
+  const [rStartYear, setRStartYear] = useState(() => new Date().getFullYear());
+  const [rStartMonth, setRStartMonth] = useState(() => new Date().getMonth() + 1);
   const [monthlyChooserOpen, setMonthlyChooserOpen] = useState(false);
   const [todoTemplates, setTodoTemplates] = useState<any>({
     create: '{name}さんがTODO「{title}」を追加しました。',
@@ -242,19 +244,55 @@ export default function TodosPage() {
         const effectiveMode = rMonthlyMode === 'interval' ? rIntervalSubMode : rMonthlyMode;
         const interval = rMonthlyMode === 'interval' ? Math.max(1, Number(rIntervalMonths) || 1) : 1;
         detail.intervalMonths = interval;
+        if (rMonthlyMode === 'interval') {
+          // 開始年月を保存しておく (将来また UI で読み戻したい時用)
+          detail.startYear = rStartYear;
+          detail.startMonth = rStartMonth;
+        }
+        // 候補基準日を決める: interval モードなら指定された開始年月、 それ以外は今月
+        const candidateYear = rMonthlyMode === 'interval' ? rStartYear : nextRun.getFullYear();
+        const candidateMonth = rMonthlyMode === 'interval' ? rStartMonth - 1 : nextRun.getMonth();
         if (effectiveMode === 'date') {
           finalType = 'monthly_date'; detail.dayOfMonth = rDayOfMonth;
-          nextRun.setDate(Math.min(rDayOfMonth, new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 0).getDate()));
-          nextRun.setHours(h, m, 0, 0);
-          if (nextRun <= new Date()) { nextRun.setMonth(nextRun.getMonth() + 1); nextRun.setDate(Math.min(rDayOfMonth, new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 0).getDate())); }
+          const baseLastDay = new Date(candidateYear, candidateMonth + 1, 0).getDate();
+          nextRun = new Date(candidateYear, candidateMonth, Math.min(rDayOfMonth, baseLastDay), h, m, 0, 0);
+          // 過去になっていたら interval ヶ月ずつ進める
+          while (nextRun <= new Date()) {
+            const next = new Date(nextRun);
+            next.setMonth(next.getMonth() + interval, 1);
+            const last = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+            next.setDate(Math.min(rDayOfMonth, last));
+            next.setHours(h, m, 0, 0);
+            nextRun = next;
+          }
         } else {
           finalType = 'monthly_nth'; detail.nthWeek = rNthWeek; detail.dayOfWeek = rDay;
           const jsDay = rDay === 7 ? 0 : rDay;
-          let tmp = new Date(nextRun.getFullYear(), nextRun.getMonth(), 1, h, m, 0);
-          let cnt = 0;
-          while (tmp.getMonth() === nextRun.getMonth()) { if (tmp.getDay() === jsDay) { cnt++; if (cnt === rNthWeek) break; } tmp.setDate(tmp.getDate() + 1); }
-          if (tmp <= new Date() || cnt !== rNthWeek) { tmp = new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 1, h, m, 0); cnt = 0; while (true) { if (tmp.getDay() === jsDay) { cnt++; if (cnt === rNthWeek) break; } tmp.setDate(tmp.getDate() + 1); } }
-          nextRun = tmp;
+          // candidate(Year, Month) の1日を起点に nthWeek 番目の jsDay 曜日を探す
+          const findNthWeekday = (y: number, mo: number): Date | null => {
+            const start = new Date(y, mo, 1, h, m, 0);
+            let cnt = 0;
+            const tmp = new Date(start);
+            while (tmp.getMonth() === mo) {
+              if (tmp.getDay() === jsDay) { cnt++; if (cnt === rNthWeek) return new Date(tmp); }
+              tmp.setDate(tmp.getDate() + 1);
+            }
+            return null;
+          };
+          let tmp = findNthWeekday(candidateYear, candidateMonth);
+          // 該当日無し or 過去 → interval ヶ月後を試す
+          while (!tmp || tmp <= new Date()) {
+            const baseY = tmp ? tmp.getFullYear() : candidateYear;
+            const baseM = tmp ? tmp.getMonth() : candidateMonth;
+            const nextY = new Date(baseY, baseM + interval, 1).getFullYear();
+            const nextM = new Date(baseY, baseM + interval, 1).getMonth();
+            tmp = findNthWeekday(nextY, nextM);
+            if (!tmp) {
+              // 念のため無限ループ防止: 12 ヶ月以上先まで進めても見つからない異常ケースは中断
+              if (nextY - candidateYear > 2) break;
+            }
+          }
+          if (tmp) nextRun = tmp;
         }
       }
     }
@@ -308,6 +346,8 @@ export default function TodosPage() {
     if (detail.dayOfMonth) setRDayOfMonth(detail.dayOfMonth);
     if (detail.nthWeek) setRNthWeek(detail.nthWeek);
     setRIntervalMonths(interval > 1 ? interval : 2);
+    setRStartYear(Number(detail.startYear) || new Date().getFullYear());
+    setRStartMonth(Number(detail.startMonth) || (new Date().getMonth() + 1));
     setIsReminderModalOpen(true);
   };
 
@@ -437,12 +477,30 @@ export default function TodosPage() {
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => {
-          const label = t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : 'それ以上';
+          let label = '';
+          if (t === 'once') label = '1回';
+          else if (t === 'daily') label = '毎日';
+          else if (t === 'weekly') label = '毎週';
+          else {
+            // monthly ボタンのラベルは、 選択されているモードによって変わる
+            if (rType === 'monthly') {
+              if (rMonthlyMode === 'date') label = '毎月○日';
+              else if (rMonthlyMode === 'nth') label = '毎月第○△曜日';
+              else label = 'それ以上';
+            } else {
+              label = 'それ以上';
+            }
+          }
           return (
             <button type="button" key={t} onClick={(e) => {
               e.preventDefault();
-              setRType(t);
-              if (t === 'monthly') setMonthlyChooserOpen(true);
+              if (t === 'monthly') {
+                // monthly ボタンは押すたびにサブモーダルが出る (= モード再選択)
+                setRType('monthly');
+                setMonthlyChooserOpen(true);
+              } else {
+                setRType(t);
+              }
             }} style={{
               padding: '8px 16px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer',
               background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b', transition: '0.2s'
@@ -466,24 +524,14 @@ export default function TodosPage() {
         )}
 
         {rType === 'monthly' && rMonthlyMode === 'date' && (
-          <>
-            <button type="button" onClick={(e) => { e.preventDefault(); setMonthlyChooserOpen(true); }} style={{
-              padding: '12px 14px', borderRadius: '12px', border: '1px solid #9370db', background: '#f3eafe', color: '#6d49c8',
-              fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
-            }}>毎月○日 ▾</button>
-            <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
-              style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-              {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
-            </select>
-          </>
+          <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
+            style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+            {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
+          </select>
         )}
 
         {rType === 'monthly' && rMonthlyMode === 'nth' && (
           <>
-            <button type="button" onClick={(e) => { e.preventDefault(); setMonthlyChooserOpen(true); }} style={{
-              padding: '12px 14px', borderRadius: '12px', border: '1px solid #9370db', background: '#f3eafe', color: '#6d49c8',
-              fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
-            }}>毎月第N曜日 ▾</button>
             <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
               style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
               {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
@@ -495,46 +543,84 @@ export default function TodosPage() {
           </>
         )}
 
+        {/* それ以上モード: 1 行目 = 開始年月 + 間隔, 2 行目 = 日にち/第N曜日 タブ */}
         {rType === 'monthly' && rMonthlyMode === 'interval' && (
-          <>
-            <button type="button" onClick={(e) => { e.preventDefault(); setMonthlyChooserOpen(true); }} style={{
-              padding: '12px 14px', borderRadius: '12px', border: '1px solid #9370db', background: '#f3eafe', color: '#6d49c8',
-              fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
-            }}>Nヶ月に1回 ▾</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+            {/* 1 行目: 開始年月 + Nヶ月に1回 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569' }}>
+              <select value={rStartYear} onChange={e => setRStartYear(Number(e.target.value))}
+                style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                {Array.from({length: 5}, (_, i) => {
+                  const y = new Date().getFullYear() + i;
+                  return <option key={y} value={y}>{y}年</option>;
+                })}
+              </select>
+              <select value={rStartMonth} onChange={e => setRStartMonth(Number(e.target.value))}
+                style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                {Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>{i+1}月</option>)}
+              </select>
+              <span>から</span>
               <select value={rIntervalMonths} onChange={e => setRIntervalMonths(Number(e.target.value))}
-                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
                 {[2,3,4,6,12].map(n => <option key={n} value={n}>{n}</option>)}
               </select>
               <span>ヶ月に1回</span>
             </div>
-            <select value={rIntervalSubMode} onChange={e => setRIntervalSubMode(e.target.value as 'date' | 'nth')}
-              style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-              <option value="date">○日</option>
-              <option value="nth">第N曜日</option>
-            </select>
-            {rIntervalSubMode === 'date' ? (
-              <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
-                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-                {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
-              </select>
-            ) : (
-              <>
-                <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
+
+            {/* 2 行目: 日にち / 第N曜日 タブ */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[
+                { id: 'date' as const, label: '日にちを設定' },
+                { id: 'nth' as const, label: '第○△曜日を設定' },
+              ].map(opt => (
+                <button
+                  type="button" key={opt.id}
+                  onClick={(e) => { e.preventDefault(); setRIntervalSubMode(opt.id); }}
+                  style={{
+                    flex: 1,
+                    padding: '10px', borderRadius: '12px',
+                    fontSize: '0.85rem', fontWeight: 600,
+                    border: rIntervalSubMode === opt.id ? '2px solid #9370db' : '1px solid #e2e8f0',
+                    background: rIntervalSubMode === opt.id ? '#f3eafe' : 'white',
+                    color: rIntervalSubMode === opt.id ? '#6d49c8' : '#475569',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 3 行目: サブモードに応じた入力 */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {rIntervalSubMode === 'date' ? (
+                <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
                   style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-                  {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
+                  {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
                 </select>
-                <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
-                  style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-                  {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
-                </select>
-              </>
-            )}
-          </>
+              ) : (
+                <>
+                  <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
+                    style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                    {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
+                  </select>
+                  <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
+                    style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                    {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
+                  </select>
+                </>
+              )}
+              <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
+                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }} />
+            </div>
+          </div>
         )}
 
-        <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
-          style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }} />
+        {/* それ以上モード以外は時間入力をこの行に */}
+        {!(rType === 'monthly' && rMonthlyMode === 'interval') && (
+          <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
+            style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }} />
+        )}
       </div>
 
       <div style={{ padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
@@ -561,28 +647,26 @@ export default function TodosPage() {
           className="animate-slide-up"
           style={{ background: 'white', width: '88%', maxWidth: '380px', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.25)' }}
         >
-          <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>毎月以上の繰り返し</h4>
-          <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: '1.5' }}>どの形で繰り返したいか選んでください</p>
+          <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>どの繰り返し方にする？</h4>
           {[
-            { id: 'date' as const, label: '毎月○日', sub: '日にち + 時間で繰り返し' },
-            { id: 'nth' as const, label: '毎月第N曜日', sub: '第N週 + 曜日 + 時間で繰り返し' },
-            { id: 'interval' as const, label: 'それ以上 (Nヶ月に1回)', sub: '2/3/4/6/12ヶ月の間隔で繰り返し' },
+            { id: 'date' as const, label: '毎月○日' },
+            { id: 'nth' as const, label: '毎月第○△曜日' },
+            { id: 'interval' as const, label: 'それ以上' },
           ].map(opt => (
             <button
               key={opt.id}
               type="button"
               onClick={() => choose(opt.id)}
               style={{
-                textAlign: 'left',
+                textAlign: 'center',
                 padding: '14px 16px', borderRadius: '14px',
                 border: rMonthlyMode === opt.id ? '2px solid #9370db' : '1px solid #e2e8f0',
                 background: rMonthlyMode === opt.id ? '#f3eafe' : 'white',
                 cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', gap: '4px',
+                fontSize: '1rem', fontWeight: 700, color: '#1e293b',
               }}
             >
-              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>{opt.label}</span>
-              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{opt.sub}</span>
+              {opt.label}
             </button>
           ))}
           <button type="button" onClick={() => setMonthlyChooserOpen(false)} style={{ marginTop: '4px', padding: '10px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>キャンセル</button>
@@ -791,6 +875,8 @@ export default function TodosPage() {
             setRDay(1);
             setRTime('09:00');
             setRDate('');
+            setRStartYear(new Date().getFullYear());
+            setRStartMonth(new Date().getMonth() + 1);
           })() : openTodoModal(); }}
           style={{ background: '#9370db', color: 'white', padding: '8px 16px', borderRadius: '12px', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>
           <Plus size={16} /> {tab === 'reminders' ? 'リマインダー' : 'Task'}
