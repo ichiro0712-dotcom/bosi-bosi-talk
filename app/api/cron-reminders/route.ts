@@ -70,27 +70,28 @@ export async function GET(request: Request) {
           // JST (+9時間) としてオフセットを加えてからDateオブジェクトを生成することで、getMonth()やgetDay()がJSTベースの適切な値になるようにする
           let d = new Date(currentUTC.getTime() + 9 * 60 * 60 * 1000);
           
+          const intervalMonths = Math.max(1, Number(detail?.intervalMonths) || 1);
           if (type === 'daily') {
             d.setDate(d.getDate() + 1);
           } else if (type === 'weekly') {
             d.setDate(d.getDate() + 7);
           } else if (type === 'monthly_date' || type === 'monthly') {
             const dayOfMonth = detail?.dayOfMonth || d.getDate();
-            d.setMonth(d.getMonth() + 1, 1); 
+            d.setMonth(d.getMonth() + intervalMonths, 1);
             const nextMonthDays = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
             d.setDate(Math.min(dayOfMonth, nextMonthDays));
           } else if (type === 'monthly_nth') {
             const jsDay = detail?.dayOfWeek === 7 ? 0 : (detail?.dayOfWeek || 1);
             const nthWeek = detail?.nthWeek || 1;
-            
-            d.setMonth(d.getMonth() + 1, 1); // 翌月の1日へ
-            
+
+            d.setMonth(d.getMonth() + intervalMonths, 1); // intervalMonths ヶ月後の1日へ
+
             while (true) {
               let expectedMonth = d.getMonth();
               let tempD = new Date(d.getTime());
               let count = 0;
               let found = false;
-              
+
               while (tempD.getMonth() === expectedMonth) {
                 if (tempD.getDay() === jsDay) {
                   count++;
@@ -102,11 +103,11 @@ export async function GET(request: Request) {
                 }
                 tempD.setDate(tempD.getDate() + 1);
               }
-              
+
               if (found) break; // 無事見つかったらループ終了
-              
-              // もし「第5曜日」が存在せず月を越えてしまった場合は、さらに翌月の1日にセットして再挑戦する
-              d.setMonth(d.getMonth() + 1, 1);
+
+              // もし「第N曜日」が存在しなければ、さらに intervalMonths ヶ月後の1日にセットして再挑戦
+              d.setMonth(d.getMonth() + intervalMonths, 1);
             }
           }
           

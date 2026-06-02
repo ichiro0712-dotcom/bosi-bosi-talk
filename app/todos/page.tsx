@@ -84,6 +84,7 @@ export default function TodosPage() {
   const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth'>('date');
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
+  const [rIntervalMonths, setRIntervalMonths] = useState(1);
   const [todoTemplates, setTodoTemplates] = useState<any>({
     create: '{name}さんがTODO「{title}」を追加しました。',
     update: '{name}さんがTODO「{title}」を更新しました。',
@@ -234,6 +235,8 @@ export default function TodosPage() {
         const jsDay = rDay === 7 ? 0 : rDay;
         while (nextRun.getDay() !== jsDay) nextRun.setDate(nextRun.getDate() + 1);
       } else if (rType === 'monthly') {
+        const interval = Math.max(1, Number(rIntervalMonths) || 1);
+        detail.intervalMonths = interval;
         if (rMonthlyMode === 'date') {
           finalType = 'monthly_date'; detail.dayOfMonth = rDayOfMonth;
           nextRun.setDate(Math.min(rDayOfMonth, new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 0).getDate()));
@@ -292,6 +295,7 @@ export default function TodosPage() {
     if (detail.dayOfWeek) setRDay(detail.dayOfWeek);
     if (detail.dayOfMonth) setRDayOfMonth(detail.dayOfMonth);
     if (detail.nthWeek) setRNthWeek(detail.nthWeek);
+    setRIntervalMonths(Math.max(1, Number(detail.intervalMonths) || 1));
     setIsReminderModalOpen(true);
   };
 
@@ -464,6 +468,13 @@ export default function TodosPage() {
                 </select>
               </>
             )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 4px', fontSize: '0.85rem', color: '#475569' }}>
+              <select value={rIntervalMonths} onChange={e => setRIntervalMonths(Number(e.target.value))}
+                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                {[1,2,3,4,6,12].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span>ヶ月に1回</span>
+            </div>
           </>
         )}
         <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
@@ -609,10 +620,12 @@ export default function TodosPage() {
   const ReminderCard = ({ r }: { r: Reminder }) => {
     const typeLabel = SCHEDULE_LABELS[r.schedule_type] || r.schedule_type;
     const detail = r.schedule_detail || {};
+    const interval = Math.max(1, Number(detail.intervalMonths) || 1);
+    const monthlyPrefix = interval > 1 ? `${interval}ヶ月に1回` : '毎月';
     let scheduleDesc = typeLabel;
     if (r.schedule_type === 'weekly' && detail.dayOfWeek) scheduleDesc += DAYS[detail.dayOfWeek] + '曜';
-    if (r.schedule_type === 'monthly_date' && detail.dayOfMonth) scheduleDesc += detail.dayOfMonth + '日';
-    if (r.schedule_type === 'monthly_nth') scheduleDesc = `毎月第${detail.nthWeek}${DAYS[detail.dayOfWeek] || ''}曜`;
+    if (r.schedule_type === 'monthly_date' && detail.dayOfMonth) scheduleDesc = `${monthlyPrefix}${detail.dayOfMonth}日`;
+    if (r.schedule_type === 'monthly_nth') scheduleDesc = `${monthlyPrefix}第${detail.nthWeek}${DAYS[detail.dayOfWeek] || ''}曜`;
     if (detail.time) scheduleDesc += ' ' + detail.time;
 
     return (
