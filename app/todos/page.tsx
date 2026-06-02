@@ -81,10 +81,12 @@ export default function TodosPage() {
   const [rDate, setRDate] = useState('');
   const [rTime, setRTime] = useState('09:00');
   const [rDay, setRDay] = useState(1);
-  const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth'>('date');
+  const [rMonthlyMode, setRMonthlyMode] = useState<'date' | 'nth' | 'interval'>('date');
+  const [rIntervalSubMode, setRIntervalSubMode] = useState<'date' | 'nth'>('date'); // 「それ以上」モードのサブ選択
   const [rDayOfMonth, setRDayOfMonth] = useState(1);
   const [rNthWeek, setRNthWeek] = useState(1);
-  const [rIntervalMonths, setRIntervalMonths] = useState(1);
+  const [rIntervalMonths, setRIntervalMonths] = useState(2);
+  const [monthlyChooserOpen, setMonthlyChooserOpen] = useState(false);
   const [todoTemplates, setTodoTemplates] = useState<any>({
     create: '{name}さんがTODO「{title}」を追加しました。',
     update: '{name}さんがTODO「{title}」を更新しました。',
@@ -235,9 +237,12 @@ export default function TodosPage() {
         const jsDay = rDay === 7 ? 0 : rDay;
         while (nextRun.getDay() !== jsDay) nextRun.setDate(nextRun.getDate() + 1);
       } else if (rType === 'monthly') {
-        const interval = Math.max(1, Number(rIntervalMonths) || 1);
+        // rMonthlyMode = 'date' | 'nth' | 'interval'
+        // 'interval' は Nヶ月に 1 回の意味で、 サブモード (rIntervalSubMode) で date / nth を選ぶ
+        const effectiveMode = rMonthlyMode === 'interval' ? rIntervalSubMode : rMonthlyMode;
+        const interval = rMonthlyMode === 'interval' ? Math.max(1, Number(rIntervalMonths) || 1) : 1;
         detail.intervalMonths = interval;
-        if (rMonthlyMode === 'date') {
+        if (effectiveMode === 'date') {
           finalType = 'monthly_date'; detail.dayOfMonth = rDayOfMonth;
           nextRun.setDate(Math.min(rDayOfMonth, new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 0).getDate()));
           nextRun.setHours(h, m, 0, 0);
@@ -284,9 +289,16 @@ export default function TodosPage() {
     setEditReminderId(r.id);
     setRMsg(r.message);
     const detail = r.schedule_detail || {};
+    const interval = Math.max(1, Number(detail.intervalMonths) || 1);
     if (r.schedule_type === 'monthly_date' || r.schedule_type === 'monthly_nth') {
       setRType('monthly');
-      setRMonthlyMode(r.schedule_type === 'monthly_date' ? 'date' : 'nth');
+      const subMode = r.schedule_type === 'monthly_date' ? 'date' : 'nth';
+      if (interval > 1) {
+        setRMonthlyMode('interval');
+        setRIntervalSubMode(subMode);
+      } else {
+        setRMonthlyMode(subMode);
+      }
     } else {
       setRType(r.schedule_type as any);
     }
@@ -295,7 +307,7 @@ export default function TodosPage() {
     if (detail.dayOfWeek) setRDay(detail.dayOfWeek);
     if (detail.dayOfMonth) setRDayOfMonth(detail.dayOfMonth);
     if (detail.nthWeek) setRNthWeek(detail.nthWeek);
-    setRIntervalMonths(Math.max(1, Number(detail.intervalMonths) || 1));
+    setRIntervalMonths(interval > 1 ? interval : 2);
     setIsReminderModalOpen(true);
   };
 
@@ -424,14 +436,21 @@ export default function TodosPage() {
         autoFocus style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.95rem', background: 'white', outline: 'none' }} />
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => (
-          <button type="button" key={t} onClick={(e) => { e.preventDefault(); setRType(t); }} style={{
-            padding: '8px 16px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b', transition: '0.2s'
-          }}>
-            {t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : '毎月'}
-          </button>
-        ))}
+        {(['once', 'daily', 'weekly', 'monthly'] as const).map(t => {
+          const label = t === 'once' ? '1回' : t === 'daily' ? '毎日' : t === 'weekly' ? '毎週' : 'それ以上';
+          return (
+            <button type="button" key={t} onClick={(e) => {
+              e.preventDefault();
+              setRType(t);
+              if (t === 'monthly') setMonthlyChooserOpen(true);
+            }} style={{
+              padding: '8px 16px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, border: 'none', cursor: 'pointer',
+              background: rType === t ? '#9370db' : '#f1f5f9', color: rType === t ? 'white' : '#64748b', transition: '0.2s'
+            }}>
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -445,13 +464,56 @@ export default function TodosPage() {
             {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜日</option>)}
           </select>
         )}
-        {rType === 'monthly' && (
+
+        {rType === 'monthly' && rMonthlyMode === 'date' && (
           <>
-            <select value={rMonthlyMode} onChange={e => setRMonthlyMode(e.target.value as 'date' | 'nth')}
+            <button type="button" onClick={(e) => { e.preventDefault(); setMonthlyChooserOpen(true); }} style={{
+              padding: '12px 14px', borderRadius: '12px', border: '1px solid #9370db', background: '#f3eafe', color: '#6d49c8',
+              fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
+            }}>毎月○日 ▾</button>
+            <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
               style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-              <option value="date">毎月○日</option><option value="nth">第N曜日</option>
+              {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
             </select>
-            {rMonthlyMode === 'date' ? (
+          </>
+        )}
+
+        {rType === 'monthly' && rMonthlyMode === 'nth' && (
+          <>
+            <button type="button" onClick={(e) => { e.preventDefault(); setMonthlyChooserOpen(true); }} style={{
+              padding: '12px 14px', borderRadius: '12px', border: '1px solid #9370db', background: '#f3eafe', color: '#6d49c8',
+              fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
+            }}>毎月第N曜日 ▾</button>
+            <select value={rNthWeek} onChange={e => setRNthWeek(Number(e.target.value))}
+              style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+              {[1,2,3,4,5].map(n => <option key={n} value={n}>第{n}</option>)}
+            </select>
+            <select value={rDay} onChange={e => setRDay(Number(e.target.value))}
+              style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+              {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{DAYS[d]}曜</option>)}
+            </select>
+          </>
+        )}
+
+        {rType === 'monthly' && rMonthlyMode === 'interval' && (
+          <>
+            <button type="button" onClick={(e) => { e.preventDefault(); setMonthlyChooserOpen(true); }} style={{
+              padding: '12px 14px', borderRadius: '12px', border: '1px solid #9370db', background: '#f3eafe', color: '#6d49c8',
+              fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer'
+            }}>Nヶ月に1回 ▾</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#475569' }}>
+              <select value={rIntervalMonths} onChange={e => setRIntervalMonths(Number(e.target.value))}
+                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+                {[2,3,4,6,12].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span>ヶ月に1回</span>
+            </div>
+            <select value={rIntervalSubMode} onChange={e => setRIntervalSubMode(e.target.value as 'date' | 'nth')}
+              style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
+              <option value="date">○日</option>
+              <option value="nth">第N曜日</option>
+            </select>
+            {rIntervalSubMode === 'date' ? (
               <select value={rDayOfMonth} onChange={e => setRDayOfMonth(Number(e.target.value))}
                 style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
                 {Array.from({length: 31}, (_, i) => <option key={i+1} value={i+1}>{i+1}日</option>)}
@@ -468,15 +530,9 @@ export default function TodosPage() {
                 </select>
               </>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 4px', fontSize: '0.85rem', color: '#475569' }}>
-              <select value={rIntervalMonths} onChange={e => setRIntervalMonths(Number(e.target.value))}
-                style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }}>
-                {[1,2,3,4,6,12].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span>ヶ月に1回</span>
-            </div>
           </>
         )}
+
         <input type="time" value={rTime} onChange={e => setRTime(e.target.value)}
           style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white', outline: 'none' }} />
       </div>
@@ -487,6 +543,53 @@ export default function TodosPage() {
       </div>
     </div>
   );
+
+  const MonthlyChooserOverlay = () => {
+    if (!monthlyChooserOpen) return null;
+    const choose = (mode: 'date' | 'nth' | 'interval') => {
+      setRMonthlyMode(mode);
+      if (mode === 'interval' && rIntervalMonths < 2) setRIntervalMonths(2);
+      setMonthlyChooserOpen(false);
+    };
+    return (
+      <div
+        onClick={() => setMonthlyChooserOpen(false)}
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          className="animate-slide-up"
+          style={{ background: 'white', width: '88%', maxWidth: '380px', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.25)' }}
+        >
+          <h4 style={{ margin: '0 0 4px', fontSize: '1rem', color: '#1e293b', fontWeight: 700 }}>毎月以上の繰り返し</h4>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: '1.5' }}>どの形で繰り返したいか選んでください</p>
+          {[
+            { id: 'date' as const, label: '毎月○日', sub: '日にち + 時間で繰り返し' },
+            { id: 'nth' as const, label: '毎月第N曜日', sub: '第N週 + 曜日 + 時間で繰り返し' },
+            { id: 'interval' as const, label: 'それ以上 (Nヶ月に1回)', sub: '2/3/4/6/12ヶ月の間隔で繰り返し' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => choose(opt.id)}
+              style={{
+                textAlign: 'left',
+                padding: '14px 16px', borderRadius: '14px',
+                border: rMonthlyMode === opt.id ? '2px solid #9370db' : '1px solid #e2e8f0',
+                background: rMonthlyMode === opt.id ? '#f3eafe' : 'white',
+                cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', gap: '4px',
+              }}
+            >
+              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>{opt.label}</span>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{opt.sub}</span>
+            </button>
+          ))}
+          <button type="button" onClick={() => setMonthlyChooserOpen(false)} style={{ marginTop: '4px', padding: '10px', borderRadius: '12px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>キャンセル</button>
+        </div>
+      </div>
+    );
+  };
 
   const ReminderModal = () => {
     if (!isReminderModalOpen) return null;
@@ -503,6 +606,7 @@ export default function TodosPage() {
             {ReminderForm({ isEdit: !!editReminderId, targetId: editReminderId || undefined })}
           </div>
         </div>
+        <MonthlyChooserOverlay />
       </div>
     );
   };
@@ -674,7 +778,20 @@ export default function TodosPage() {
       {/* Header */}
       <div style={{ padding: '16px 20px', background: 'var(--glass-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '-0.5px' }}>TODO / リマインダー</h1>
-        <button onClick={() => { tab === 'reminders' ? (() => { setIsReminderModalOpen(true); setRMsg(''); })() : openTodoModal(); }}
+        <button onClick={() => { tab === 'reminders' ? (() => {
+            setIsReminderModalOpen(true);
+            setEditReminderId(null);
+            setRMsg('');
+            setRType('daily');
+            setRMonthlyMode('date');
+            setRIntervalSubMode('date');
+            setRIntervalMonths(2);
+            setRDayOfMonth(1);
+            setRNthWeek(1);
+            setRDay(1);
+            setRTime('09:00');
+            setRDate('');
+          })() : openTodoModal(); }}
           style={{ background: '#9370db', color: 'white', padding: '8px 16px', borderRadius: '12px', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 10px rgba(147, 112, 219, 0.3)' }}>
           <Plus size={16} /> {tab === 'reminders' ? 'リマインダー' : 'Task'}
         </button>
