@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import webPush from 'web-push';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -136,9 +136,9 @@ export async function GET(request: Request) {
             const prompt = settings?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
 
             const res = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              model: 'gemini-3.5-flash-lite',
               contents: [{ role: 'user', parts: [{ text: `今日期限のタスクがあるよ。キャラを崩さず「今日はこれやる予定だけど大丈夫？」的な感じで声をかけて。タスク一覧:\n${listStr}` }] }],
-              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
+              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 2000, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
             });
             if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
               console.warn('cron-mochi (today-due): MAX_TOKENS truncation detected', { len: res.text?.length });
@@ -159,9 +159,9 @@ export async function GET(request: Request) {
             const prompt = settings?.mochi_prompt || 'あなたはミルクとメリーというラブラブカップルをサポート・応援するAI「もち」です。2人の幸せを願い、丁寧語を使わずに親しみやすく話してください。';
 
             const res = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              model: 'gemini-3.5-flash-lite',
               contents: [{ role: 'user', parts: [{ text: `以下のタスクが期限に近づいているよ（もちリマインド設定）。キャラを崩さず「完了まであと●日だけど順調だもちか？」的に声をかけて。タスク一覧:\n${rListStr}` }] }],
-              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
+              config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 2000, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
             });
             if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
               console.warn('cron-mochi (mochi-remind): MAX_TOKENS truncation detected', { len: res.text?.length });
@@ -241,9 +241,9 @@ ${list}
 ${upcomingRemindList}`;
 
         const res = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.5-flash-lite',
           contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
-          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingBudget: 0 } }
+          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
         });
         if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
           console.warn('cron-mochi (monday-weekly): MAX_TOKENS truncation detected', { len: res.text?.length });
@@ -306,9 +306,9 @@ ${list}
 ${upcomingRemindList}`;
 
         const res = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.5-flash-lite',
           contents: [{ role: 'user', parts: [{ text: textPrompt }] }],
-          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingBudget: 0 } }
+          config: { systemInstruction: prompt, temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
         });
         if (res.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
           console.warn('cron-mochi (monthly-first): MAX_TOKENS truncation detected', { len: res.text?.length });

@@ -721,7 +721,7 @@ async function checkAndCompactSummary(ai: any): Promise<void> {
     }).join('\n');
 
     const summaryResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash-lite',
       contents: [{ role: 'user', parts: [{ text: `以下の会話を300字以内で要約してください。重要な出来事、約束、感情の変化を優先して残してください。\n\n${chatLog}` }] }],
       config: { temperature: 0.3, maxOutputTokens: 500 }
     });
@@ -899,7 +899,7 @@ export async function POST(req: Request) {
 
     // Gemini API呼び出し（Function Calling付き）
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash-lite',
       contents: apiMessages,
       config: {
         systemInstruction: systemPrompt,
@@ -917,6 +917,7 @@ export async function POST(req: Request) {
     // データ取得系 tool (hub_chat/hub_cancel/search_messages/suggest_meal) は
     // functionResponse として LLM に戻し、 自然言語で応答してもらう (定型文ではない)
     const dataFunctionResponses: { name: string; response: any }[] = [];
+    const actionFunctionResponses: { name: string; response: any }[] = [];
     let hasDataCall = false;
 
     if (candidate?.content?.parts) {
@@ -945,6 +946,13 @@ export async function POST(req: Request) {
           } else {
             const report = await executeFunctionCall(fnName, fnArgs, { userId });
             if (report) actionReports.push(report);
+            // アクション系 tool も functionResponse を控えておく。
+            // テキスト応答が無かった場合の follow-up で、 model turn で終わる
+            // 不正な contents を作らないために使う (Gemini 3 系は 400 になる)。
+            actionFunctionResponses.push({
+              name: fnName,
+              response: { success: true, ...(report ? { detail: report } : {}) },
+            });
           }
         }
         if (part.text) {
@@ -956,7 +964,7 @@ export async function POST(req: Request) {
     // データ取得系 tool が呼ばれた場合は functionResponse を渡して LLM に自然な返答を生成させる
     if (hasDataCall) {
       const followUp = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash-lite',
         contents: [
           ...apiMessages,
           { role: 'model', parts: candidate?.content?.parts ?? [] },
@@ -977,11 +985,26 @@ export async function POST(req: Request) {
       if (followUpText) {
         aiReply = aiReply.trim() ? aiReply + '\n' + followUpText : followUpText;
       }
-    } else if (!aiReply.trim() && candidate?.content?.parts?.some((p: any) => p.functionCall)) {
-      // 既存挙動: hub 以外のツールだけ呼ばれてテキスト応答がない場合の follow-up
+    } else if (
+      !aiReply.trim() &&
+      actionFunctionResponses.length > 0 &&
+      candidate?.content?.parts?.some((p: any) => p.functionCall)
+    ) {
+      // hub 以外のツールだけ呼ばれてテキスト応答がない場合の follow-up。
+      // model turn で終わる contents は API 仕様違反なので、 実行結果を
+      // functionResponse (user turn) として返し、 user turn で終わらせる。
       const followUp = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [...apiMessages, { role: 'model', parts: candidate.content.parts }],
+        model: 'gemini-3.5-flash-lite',
+        contents: [
+          ...apiMessages,
+          { role: 'model', parts: candidate.content.parts },
+          {
+            role: 'user',
+            parts: actionFunctionResponses.map((fr) => ({
+              functionResponse: { name: fr.name, response: fr.response },
+            })),
+          },
+        ],
         config: {
           systemInstruction: systemPrompt,
           temperature: 0.7,
