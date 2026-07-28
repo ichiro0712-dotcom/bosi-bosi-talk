@@ -787,13 +787,42 @@ export async function POST(req: Request) {
     const activeTool: string | null =
       typeof tool === 'string' && ['meal_log', 'reminder', 'schedule'].includes(tool) ? tool : null;
 
-    // 食事記録は Hub 側 (H-1) が未完了のため、 LLM に渡さず即返す。
-    // prompt で「準備中と答えて」 と指示しても、 「ご飯の提案フロー (重要)」 に
-    // 引っ張られて提案を始めてしまうため (実測 3/3)、 コード側で確定させる。
-    // 実装時はこのブロックを外して hub_chat 委譲に置き換える。
+    // ===== 食事記録: LLM に選ばせず、 route 側で決め打ちで Hub に委譲する =====
+    // LLM に判断させると既存の「ご飯の提案フロー (重要)」 に引っ張られて
+    // 献立提案を始めてしまう (実測 3/3 で失敗)。 発火を 100% 保証するため
+    // Gemini を経由せず callHubChat を直接呼ぶ。 栄養素の推計は Hub 側の責務。
     if (activeTool === 'meal_log') {
-      await insertMochiMessage('食事記録はまだ準備中だもち…！ もうちょっとだけ待っててほしいもち🙏');
-      return NextResponse.json({ success: true, notImplemented: 'meal_log' });
+      // user_hint が無いと Hub は記録せず聞き返す。 取り違えは追記なので
+      // 後から直しにくい → 送る前に弾いて、 記録されたと誤解させない。
+      const hint = userIdToHint(userId);
+      if (!hint) {
+        await insertMochiMessage('ごめんもち、 誰の食事記録か分からなかったもち…！ プロフィールを選び直してみてほしいもち🙏');
+        return NextResponse.json({ success: true, mealLog: 'no_user_hint' });
+      }
+
+      // ユーザーの発話をほぼそのまま渡す。 kcal はもち側で計算しない (Hub 側の LLM がやる)。
+      // 時刻の言及は Hub が本文から拾うので、 消さずに残す。
+      const resultStr = await callHubChat({ message: `${text}\n\n(これは食事記録の依頼です。 食事記録して)` }, { userId });
+      let parsed: any;
+      try {
+        parsed = resultStr ? JSON.parse(resultStr) : { success: false };
+      } catch {
+        parsed = { success: false, raw: resultStr };
+      }
+
+      if (!parsed?.success) {
+        // 失敗を成功に見せない。 理由が分かるものは添える。
+        const detail = typeof parsed?.error === 'string' ? parsed.error : '';
+        await insertMochiMessage(`ごめんもち、 食事記録がうまくいかなかったもち…！${detail ? `\n(${detail})` : ''}\nちょっと時間をおいてもう一度試してみてほしいもち🙏`);
+        return NextResponse.json({ success: true, mealLog: 'failed' });
+      }
+
+      // Hub がタスクを受理。 task_id は内部用なので絶対に出さない。
+      // 完了は external-notify 経由で原文引用のまま届く。
+      // 「記録した」 とは言い切らない — 実際に書けたかは Hub の返答が来るまで
+      // 分からないため (2026-07-29 時点、 Hub 側は確認を返すだけで書き込まない)。
+      await insertMochiMessage('食事記録をお願いしてきたもち！ お返事きたら教えるね📝');
+      return NextResponse.json({ success: true, mealLog: 'accepted' });
     }
 
     if (!process.env.GEMINI_API_KEY) {
