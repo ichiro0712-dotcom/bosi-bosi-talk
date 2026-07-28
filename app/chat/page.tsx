@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { Send, Plus, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Send, Plus, Wrench, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
@@ -19,6 +19,21 @@ type Message = {
 };
 
 type Announcement = { id: number; message_id: number; text: string; user_id: string; created_by: string };
+
+// ===== ツール定義 =====
+// ツールはいずれも「もちに明示的に依頼する」 モード。 選択すると入力欄の
+// プレースホルダと状態バーが変わり、 /api/mochi に tool として送られる。
+// 'mochi' は従来のもちモード (自由会話) で、 tool は送らない。
+type ToolId = 'mochi' | 'meal_log' | 'reminder' | 'schedule';
+
+const TOOLS: { id: ToolId; label: string; icon: string; placeholder: string; hint: string; accent: string }[] = [
+  { id: 'mochi', label: 'もち', icon: '/mochi.png', placeholder: 'もちに話しかける...', hint: 'もちモード中', accent: '#cbd5e1' },
+  { id: 'meal_log', label: '食事記録', icon: '🍽️', placeholder: '何を食べた?', hint: '食事記録モード', accent: '#fde68a' },
+  { id: 'reminder', label: 'リマインダー', icon: '⏰', placeholder: '何をいつ思い出す?', hint: 'リマインダー登録モード', accent: '#bfdbfe' },
+  { id: 'schedule', label: 'スケジュール', icon: '📅', placeholder: 'いつ何の予定?', hint: 'スケジュール登録モード', accent: '#bbf7d0' },
+];
+
+const TOOL_BY_ID = (id: ToolId | null) => TOOLS.find(t => t.id === id) || null;
 
 function renderTextWithLinks(text: string) {
   const splitRegex = /(https?:\/\/[^\s]+)/g;
@@ -71,6 +86,7 @@ export default function ChatApp() {
   const [inputText, setInputText] = useState("");
   const [isDBReady, setIsDBReady] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showToolMenu, setShowToolMenu] = useState(false);
   const [showStampPicker, setShowStampPicker] = useState(false);
   const [isStampModalOpen, setIsStampModalOpen] = useState(false);
   const [myProfile, setMyProfile] = useState<string | null>(null);
@@ -80,6 +96,9 @@ export default function ChatApp() {
   const [pushStatus, setPushStatus] = useState<string>('granted');
   const [isMochiMode, setIsMochiMode] = useState(false);
   const [isMochiTyping, setIsMochiTyping] = useState(false);
+  // ツール選択。 'mochi' は従来の isMochiMode と同義 (後方互換のため状態は分けない)。
+  // meal_log / reminder / schedule はいずれも「もちに明示的に依頼する」 モード。
+  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
   const [contextMenu, setContextMenu] = useState<{ msg: Message; rect?: DOMRect | null; x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{top: number, left: number, placement: 'top'|'bottom', originX: number} | null>(null);
@@ -110,6 +129,30 @@ export default function ChatApp() {
     if (saved) { try { setLocalDeleted(new Set(JSON.parse(saved))); } catch {} }
     const savedReacts = localStorage.getItem('boshi_recent_reactions');
     if (savedReacts) { try { setRecentReactions(JSON.parse(savedReacts)); } catch {} }
+  }, []);
+
+  // ソフトキーボード検知 → body.keyboard-open を付け外し。
+  // これでボトムナビを隠し、 入力欄だけがせり上がるようにする (globals.css 側で定義)。
+  // visualViewport が無い環境 (古い Safari / PC) では何もしない = 従来どおり。
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    if (!vv) return;
+
+    const sync = () => {
+      // レイアウトビューポートとの差分がキーボードの高さ。
+      // 150px 未満はアドレスバーの伸縮なので無視する。
+      const keyboardHeight = window.innerHeight - vv.height - vv.offsetTop;
+      document.body.classList.toggle('keyboard-open', keyboardHeight > 150);
+    };
+
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => {
+      vv.removeEventListener('resize', sync);
+      vv.removeEventListener('scroll', sync);
+      document.body.classList.remove('keyboard-open');
+    };
   }, []);
 
   const handleReact = async (msgId: number, reactionId: string) => {
@@ -682,8 +725,10 @@ export default function ChatApp() {
   const handleSend = async (textOverride?: string, imgUrl?: string) => {
     const txt = textOverride || inputText;
     if (!txt && !imgUrl) return;
-    setInputText(""); if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    setInputText("");
     const sendingToMochi = isMochiMode;
+    // 'mochi' は自由会話なので tool として送らない (route 側の分岐対象は明示ツールのみ)
+    const sendingTool = activeTool && activeTool !== 'mochi' ? activeTool : undefined;
     const replyToId = replyTo?.id;
     setReplyTo(null);
 
@@ -715,7 +760,7 @@ export default function ChatApp() {
       if (!error && sendingToMochi && txt && !imgUrl) {
         const userName = myProfile === 'user_a' ? 'ミルク' : 'メリー';
         setIsMochiTyping(true);
-        fetch('/api/mochi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, userId: myProfile, userName, currentScreen: 'chat' }) })
+        fetch('/api/mochi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, userId: myProfile, userName, currentScreen: 'chat', tool: sendingTool }) })
         .then(async res => {
           if (!res.ok) { const d = await res.json().catch(() => null); throw new Error(d?.error || `HTTP ${res.status}`); }
           // もちの返答がRealtimeで届かない場合のフォールバック: 2秒後にDBからリフレッシュ
@@ -1055,7 +1100,6 @@ export default function ChatApp() {
               {[
                 { icon: <ImageIcon size={22} />, label: '画像', bg: '#e2e8f0', color: '#475569', onClick: () => document.getElementById('media-upload')?.click() },
                 { icon: <Smile size={22} />, label: 'スタンプ', bg: '#fce7f3', color: '#db2777', onClick: () => { setShowAttachMenu(false); setShowStampPicker(true); } },
-                { icon: <img loading="lazy" src="/mochi.png" alt="" style={{width:'26px', height:'26px', objectFit:'contain'}} />, label: isMochiMode ? 'ON' : 'もち', bg: isMochiMode ? '#cbd5e1' : '#f1f5f9', color: '#333', onClick: () => { setShowAttachMenu(false); setIsMochiMode(p => !p); }, border: isMochiMode ? '2px solid #333' : 'none' },
                 { icon: <FilePlus size={22} />, label: '作成', bg: '#dbeafe', color: '#2563eb', onClick: () => { setShowAttachMenu(false); setIsStampModalOpen(true); } },
               ].map((item, i) => (
                 <div key={i} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', cursor:'pointer'}} onClick={item.onClick}>
@@ -1063,6 +1107,33 @@ export default function ChatApp() {
                   <span style={{fontSize:'0.7rem', fontWeight:600, color:'var(--text-muted)'}}>{item.label}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {showToolMenu && (
+            <div className="animate-slide-up" style={{ position:'absolute', bottom:'76px', left:'16px', background:'rgba(255,255,255,0.98)', backdropFilter:'blur(20px)', borderRadius:'20px', padding:'14px', boxShadow:'var(--shadow-soft)', display:'flex', gap:'18px', zIndex:50, border:'1px solid var(--glass-border)' }}>
+              {TOOLS.map((t) => {
+                const on = activeTool === t.id;
+                return (
+                  <div key={t.id} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'6px', cursor:'pointer'}}
+                    onClick={() => {
+                      setShowToolMenu(false);
+                      // 同じツールをもう一度押したら解除
+                      const next: ToolId | null = on ? null : t.id;
+                      setActiveTool(next);
+                      // ツールはすべて「もちに依頼する」 モードなので、 もちモードも連動させる
+                      setIsMochiMode(next !== null);
+                      textareaRef.current?.focus();
+                    }}>
+                    <div style={{background: on ? t.accent : '#f1f5f9', borderRadius:'50%', width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'22px', border: on ? '2px solid #334155' : 'none'}}>
+                      {t.icon.startsWith('/')
+                        ? <img loading="lazy" src={t.icon} alt="" style={{width:'26px', height:'26px', objectFit:'contain'}} />
+                        : t.icon}
+                    </div>
+                    <span style={{fontSize:'0.7rem', fontWeight:600, color: on ? '#334155' : 'var(--text-muted)'}}>{t.label}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -1093,7 +1164,7 @@ export default function ChatApp() {
           )}
 
           {isMochiMode && (
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'6px', marginBottom:'8px', padding:'5px 10px', background:'#f1f5f9', borderRadius:'10px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'6px', marginBottom:'8px', padding:'5px 10px', background: activeTool && activeTool !== 'mochi' ? (TOOL_BY_ID(activeTool)?.accent || '#f1f5f9') : '#f1f5f9', borderRadius:'10px' }}>
               <img loading="lazy" src="/mochi.png" alt="" style={{ width:'18px', height:'18px', objectFit:'contain' }} />
               {isMochiTyping ? (
                 <>
@@ -1103,24 +1174,35 @@ export default function ChatApp() {
                   </div>
                 </>
               ) : (
-                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#64748b' }}>もちモード中</span>
+                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#64748b' }}>{TOOL_BY_ID(activeTool)?.hint || 'もちモード中'}</span>
               )}
-              <button onClick={() => setIsMochiMode(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', fontSize:'0.9rem', padding:'0 4px', lineHeight:1, position:'absolute', right:'24px' }}>✕</button>
+              <button onClick={() => { setIsMochiMode(false); setActiveTool(null); }} style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', fontSize:'0.9rem', padding:'0 4px', lineHeight:1, position:'absolute', right:'24px' }}>✕</button>
             </div>
           )}
 
-          <div style={{ display:'flex', background: isMochiMode ? '#f8fafc' : 'rgba(255,255,255,0.65)', border: isMochiMode ? '2px solid #cbd5e1' : '1px solid var(--glass-border)', borderRadius:'24px', padding:'6px 14px', alignItems:'center', gap:'10px' }}>
-            <button onClick={() => {setShowAttachMenu(!showAttachMenu); setShowStampPicker(false);}} style={{ color:'var(--text-muted)', background:'none', border:'none', cursor:'pointer', padding:'4px', display:'flex' }}>
-              <Plus size={22} style={{ transform: showAttachMenu ? 'rotate(45deg)' : 'none', transition:'all 0.2s' }} />
-            </button>
+          {/* 入力ボックス: 3行のテキストエリア + 最下段に [＋] [ツール] ... [送信] */}
+          <div style={{ display:'flex', flexDirection:'column', background: isMochiMode ? '#f8fafc' : 'rgba(255,255,255,0.65)', border: isMochiMode ? '2px solid #cbd5e1' : '1px solid var(--glass-border)', borderRadius:'20px', padding:'10px 12px 8px', gap:'6px' }}>
             <textarea ref={textareaRef} value={inputText}
-              onChange={e => { setInputText(e.target.value); e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight, 120)+'px'; }}
-              placeholder={isMochiMode ? "もちに話しかける..." : "メッセージを入力..."} rows={1}
-              style={{ flex:1, background:'transparent', border:'none', color:'var(--text-main)', outline:'none', fontSize:'0.95rem', padding:'7px 0', resize:'none', maxHeight:'120px' }}
+              onChange={e => setInputText(e.target.value)}
+              placeholder={TOOL_BY_ID(activeTool)?.placeholder || (isMochiMode ? 'もちに話しかける...' : 'メッセージを入力...')} rows={3}
+              style={{ width:'100%', background:'transparent', border:'none', color:'var(--text-main)', outline:'none', fontSize:'0.95rem', lineHeight:'1.5', padding:'2px 2px', resize:'none', minHeight:'4.5em', maxHeight:'40vh', overflowY:'auto' }}
             />
-            <button onClick={() => handleSend()} style={{ background: inputText ? (isMochiMode ? '#94a3b8' : '#9370db') : '#e2e8f0', color: inputText ? 'white' : 'var(--text-muted)', border:'none', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor: inputText ? 'pointer' : 'default', flexShrink:0 }}>
-              <Send size={17} style={{ transform:'translate(1px, 1px)' }} />
-            </button>
+            <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+              <button onClick={() => {setShowAttachMenu(!showAttachMenu); setShowToolMenu(false); setShowStampPicker(false);}}
+                aria-label="添付" style={{ color:'var(--text-muted)', background:'none', border:'none', cursor:'pointer', padding:'6px', display:'flex', alignItems:'center' }}>
+                <Plus size={22} style={{ transform: showAttachMenu ? 'rotate(45deg)' : 'none', transition:'all 0.2s' }} />
+              </button>
+              <button onClick={() => {setShowToolMenu(!showToolMenu); setShowAttachMenu(false); setShowStampPicker(false);}}
+                aria-label="ツール"
+                style={{ display:'flex', alignItems:'center', gap:'5px', background: activeTool ? (TOOL_BY_ID(activeTool)?.accent || '#e2e8f0') : 'none', color: activeTool ? '#334155' : 'var(--text-muted)', border:'none', borderRadius:'14px', cursor:'pointer', padding: activeTool ? '5px 10px' : '6px', fontSize:'0.78rem', fontWeight:700 }}>
+                <Wrench size={19} />
+                {activeTool && <span>{TOOL_BY_ID(activeTool)?.label}</span>}
+              </button>
+              <div style={{ flex:1 }} />
+              <button onClick={() => handleSend()} style={{ background: inputText ? (isMochiMode ? '#94a3b8' : '#9370db') : '#e2e8f0', color: inputText ? 'white' : 'var(--text-muted)', border:'none', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor: inputText ? 'pointer' : 'default', flexShrink:0 }}>
+                <Send size={17} style={{ transform:'translate(1px, 1px)' }} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

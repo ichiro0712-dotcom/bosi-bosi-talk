@@ -746,9 +746,35 @@ async function checkAndCompactSummary(ai: any): Promise<void> {
 
 // ===== メイン処理 =====
 
+// 明示ツールが選択されているときに system prompt に追記する指示。
+// 「このリクエストは○○である」 と断定し、 対応する tool を必ず呼ばせる。
+// 曖昧な入力でも雑談で終わらせず、 足りない情報は聞き返させる。
+function toolDirective(tool: string): string[] {
+  if (tool === 'reminder') {
+    return [
+      '=== 🔧 リマインダーツール ON ===',
+      '- ユーザーは「リマインダー」 ツールを明示的に選んでいる。 この発言は**リマインダー登録の依頼**である。',
+      '- 必ず add_reminder tool を呼ぶこと。 雑談で終わらせては絶対にダメ。',
+      '- 時刻が無い場合は勝手に決めず、 「何時にする?」 と聞き返す (登録したふりをしない)。',
+      '- 繰り返しの指定が無ければ schedule_type は once として扱い、 日付が不明なら聞き返す。',
+    ];
+  }
+  // meal_log はここに来ない (POST 冒頭でコード側が確定応答を返している)。
+  if (tool === 'schedule') {
+    return [
+      '=== 🔧 スケジュールツール ON ===',
+      '- ユーザーは「スケジュール」 ツールを明示的に選んでいる。 この発言は**予定の登録依頼**である。',
+      '- 予定は日時が決まった単発の用事なので、 add_reminder を schedule_type="once" で呼んで登録する。',
+      '- 日付・時刻が揃わない場合は勝手に補完せず、 不足している方を聞き返す。',
+      '- 登録できたら「○月○日 ○時に入れておいたもち」 と復唱して確認できるようにする。',
+    ];
+  }
+  return [];
+}
+
 export async function POST(req: Request) {
   try {
-    const { text, userId, userName, currentScreen } = await req.json();
+    const { text, userId, userName, currentScreen, tool } = await req.json();
 
     // 入力検証
     if (!text || typeof text !== 'string') {
@@ -756,6 +782,18 @@ export async function POST(req: Request) {
     }
     if (!['user_a', 'user_b'].includes(userId)) {
       return NextResponse.json({ error: 'Invalid userId' }, { status: 400 });
+    }
+    // 明示ツール。 未知の値は無視して通常会話として扱う (壊さない)。
+    const activeTool: string | null =
+      typeof tool === 'string' && ['meal_log', 'reminder', 'schedule'].includes(tool) ? tool : null;
+
+    // 食事記録は Hub 側 (H-1) が未完了のため、 LLM に渡さず即返す。
+    // prompt で「準備中と答えて」 と指示しても、 「ご飯の提案フロー (重要)」 に
+    // 引っ張られて提案を始めてしまうため (実測 3/3)、 コード側で確定させる。
+    // 実装時はこのブロックを外して hub_chat 委譲に置き換える。
+    if (activeTool === 'meal_log') {
+      await insertMochiMessage('食事記録はまだ準備中だもち…！ もうちょっとだけ待っててほしいもち🙏');
+      return NextResponse.json({ success: true, notImplemented: 'meal_log' });
     }
 
     if (!process.env.GEMINI_API_KEY) {
@@ -878,6 +916,7 @@ export async function POST(req: Request) {
       '  search_messages tool を使って検索する。 直近30件は context にすでに入っているので、',
       '  それ以前を調べたい時に有効。 引数 query には自然な言葉で OK (例: "ジムの話", "田中さんの件")。',
       '- 検索結果が見つかれば、 もちの口調で「○月○日にこんな話してたよ〜」と引用しつつ伝える。',
+      ...(activeTool ? ['', ...toolDirective(activeTool)] : []),
     ].join('\n');
 
     // 会話履歴をGemini形式に変換
