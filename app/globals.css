@@ -196,10 +196,12 @@ button {
 
   /* キーボード表示中はボトムナビを隠し、 入力欄だけがせり上がるようにする。
      ナビが残っていると縮んだビューポートを 70px 占有して入力欄を圧迫するため。
-     body.keyboard-open は chat 画面の visualViewport 監視で付け外しする。 */
+     body.keyboard-open は chat 画面の visualViewport 監視で付け外しする。
+     translateZ(0) を併記しないと下の基本定義に負けて動かない。 */
   body.keyboard-open .mobile-bottom-nav {
-    transform: translateY(100%);
+    transform: translateY(110%) translateZ(0);
     pointer-events: none;
+    visibility: hidden;
   }
 
   body.keyboard-open .main-content-area {

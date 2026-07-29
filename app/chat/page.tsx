@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { Send, Plus, Wrench, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
@@ -133,16 +133,27 @@ export default function ChatApp() {
 
   // ソフトキーボード検知 → body.keyboard-open を付け外し。
   // これでボトムナビを隠し、 入力欄だけがせり上がるようにする (globals.css 側で定義)。
+  //
+  // 判定に window.innerHeight は使えない。 viewport meta で
+  // interactive-widget=resizes-content を指定しているため、 キーボードが出ると
+  // innerHeight も visualViewport.height と一緒に縮み、 差分が常に ~0 になる。
+  // 代わりに screen.height に対する縮み量で判定する。
   // visualViewport が無い環境 (古い Safari / PC) では何もしない = 従来どおり。
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
     if (!vv) return;
 
+    // キーボードが出ていない状態の viewport 高さ。 最大値を基準として覚える
+    // (アドレスバーの伸縮でも変わるので、 都度 max を取り直す)。
+    let baseline = vv.height;
+
     const sync = () => {
-      // レイアウトビューポートとの差分がキーボードの高さ。
-      // 150px 未満はアドレスバーの伸縮なので無視する。
-      const keyboardHeight = window.innerHeight - vv.height - vv.offsetTop;
-      document.body.classList.toggle('keyboard-open', keyboardHeight > 150);
+      if (vv.height > baseline) baseline = vv.height;
+      // 縮み量が baseline の 20% を超えたらキーボードとみなす。
+      // アドレスバーの伸縮 (数十 px) では閾値に届かない。
+      const shrink = baseline - vv.height;
+      const open = shrink > Math.max(150, baseline * 0.2);
+      document.body.classList.toggle('keyboard-open', open);
     };
 
     sync();
@@ -1195,7 +1206,7 @@ export default function ChatApp() {
               <button onClick={() => {setShowToolMenu(!showToolMenu); setShowAttachMenu(false); setShowStampPicker(false);}}
                 aria-label="ツール"
                 style={{ display:'flex', alignItems:'center', gap:'5px', background: activeTool ? (TOOL_BY_ID(activeTool)?.accent || '#e2e8f0') : 'none', color: activeTool ? '#334155' : 'var(--text-muted)', border:'none', borderRadius:'14px', cursor:'pointer', padding: activeTool ? '5px 10px' : '6px', fontSize:'0.78rem', fontWeight:700 }}>
-                <Wrench size={19} />
+                <img loading="lazy" src="/mochi.png" alt="" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
                 {activeTool && <span>{TOOL_BY_ID(activeTool)?.label}</span>}
               </button>
               <div style={{ flex:1 }} />
