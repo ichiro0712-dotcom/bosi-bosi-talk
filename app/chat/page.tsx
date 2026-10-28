@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { Send, Plus, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, AlertCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Send, Plus, Image as ImageIcon, Smile, SmilePlus, FilePlus, X, BellRing, Reply, Megaphone, Copy, Trash2, RotateCcw, ChevronDown, ChevronUp, AlertCircle, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import dynamic from 'next/dynamic';
 
@@ -35,13 +35,30 @@ const TOOLS: { id: ToolId; label: string; icon: string; placeholder: string; hin
 
 const TOOL_BY_ID = (id: ToolId | null) => TOOLS.find(t => t.id === id) || null;
 
-function renderTextWithLinks(text: string) {
+// 検索語を大文字小文字を区別せずに <mark> で囲む
+function highlightText(text: string, query: string | undefined, keyPrefix: string | number): React.ReactNode {
+  if (!query) return text;
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  for (let j = lower.indexOf(q, i); j !== -1; j = lower.indexOf(q, i)) {
+    if (j > i) out.push(text.slice(i, j));
+    out.push(<mark key={`${keyPrefix}-${j}`} style={{ background: '#fde047', color: 'inherit', borderRadius: '3px', padding: '0 1px' }}>{text.slice(j, j + q.length)}</mark>);
+    i = j + q.length;
+  }
+  if (out.length === 0) return text;
+  out.push(text.slice(i));
+  return out;
+}
+
+function renderTextWithLinks(text: string, highlight?: string) {
   const splitRegex = /(https?:\/\/[^\s]+)/g;
   const testRegex = /^https?:\/\//;
   const parts = text.split(splitRegex);
   return (
     <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.4', fontWeight: 500, letterSpacing: '0.02em' }}>
-      {parts.map((part, i) => testRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" style={{color:'inherit', textDecoration:'underline'}}>{part}</a> : part)}
+      {parts.map((part, i) => testRegex.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" style={{color:'inherit', textDecoration:'underline'}}>{part}</a> : <React.Fragment key={i}>{highlightText(part, highlight, i)}</React.Fragment>)}
     </div>
   );
 }
@@ -114,6 +131,15 @@ export default function ChatApp() {
   const [recentReactions, setRecentReactions] = useState<string[]>(['mochi_smile', 'merry_heart', 'milk_star', 'mochi_good', 'merry_ok']);
   const [showFullReactionPicker, setShowFullReactionPicker] = useState<number | null>(null);
   const [hoveredMsgId, setHoveredMsgId] = useState<number | string | null>(null);
+  // 検索 (LINE 風: 該当メッセージへジャンプし、 ↑↓ で前後のヒットへ移動)
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchedQuery, setSearchedQuery] = useState(''); // 実際に検索した語 (ハイライト用)
+  const [searchResults, setSearchResults] = useState<{ id: number; created_at: string }[]>([]); // 新しい順
+  const [searchIdx, setSearchIdx] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const pendingJumpId = useRef<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -214,25 +240,41 @@ export default function ChatApp() {
     is_deleted: m.is_deleted, deleted_at: m.deleted_at, created_at_raw: m.created_at,
   }), []);
 
+  // リプライ先の本文と発言者を解決して formatted に書き込む
+  const resolveReplies = useCallback(async (formatted: Message[]) => {
+    const replyIds = formatted.filter(m => m.reply_to).map(m => m.reply_to!);
+    if (replyIds.length === 0) return;
+    const { data: replyMsgs } = await supabase.from('messages').select('id, text, user_id, is_deleted').in('id', replyIds);
+    if (!replyMsgs) return;
+    const replyMap = new Map(replyMsgs.map(r => [r.id, r]));
+    formatted.forEach(m => {
+      if (m.reply_to && replyMap.has(m.reply_to)) {
+        const r = replyMap.get(m.reply_to)!;
+        m.reply_text = r.is_deleted ? 'メッセージの送信を取り消しました' : r.text;
+        m.reply_user = SPEAKER(r.user_id);
+      }
+    });
+  }, []);
+
   const hasScrolledInitial = useRef(false);
   const isNearBottom = useRef(true);
-  const prevMsgCount = useRef(0);
+  const lastMsgId = useRef<number | string | null>(null);
 
-  // スクロール位置の追跡
-  useEffect(() => {
+  // スクロール位置の追跡。 スクロール領域の onScroll から呼ぶ
+  // (以前は mount 時の useEffect で listener を付けていたが、 その時点では
+  //  プロフィール確認中で領域が描画されておらず、 listener が付かないまま
+  //  isNearBottom が true に固定 → 過去ログ読み込みや新着のたびに最下部へ戻っていた)
+  const handleScroll = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      isNearBottom.current = scrollHeight - scrollTop - clientHeight < 150;
-    };
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    isNearBottom.current = scrollHeight - scrollTop - clientHeight < 150;
+  };
 
   // メッセージ変更時のスクロール
   useEffect(() => {
     if (messages.length === 0) return; // データ未到着
+    const last = messages[messages.length - 1];
 
     if (!hasScrolledInitial.current) {
       // 初回データ到着: 一瞬で最下部（アニメーションなし）
@@ -240,17 +282,19 @@ export default function ChatApp() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
       });
       hasScrolledInitial.current = true;
-      prevMsgCount.current = messages.length;
-    } else if ((messages.length > prevMsgCount.current || isMochiTyping) && isNearBottom.current && !isLoadingMore) {
-      // 新着メッセージ到着時、または、もちが考え中になった時
+      lastMsgId.current = last.id;
+      return;
+    }
+
+    // 末尾に新着が付いたときだけ追従する (過去ログを先頭に足したときは動かさない)
+    const appended = last.id !== lastMsgId.current;
+    lastMsgId.current = last.id;
+    if ((appended || isMochiTyping) && isNearBottom.current) {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
-      prevMsgCount.current = messages.length;
-    } else {
-      prevMsgCount.current = messages.length;
     }
-  }, [messages, isLoadingMore, isMochiTyping]);
+  }, [messages, isMochiTyping]);
 
   // 無限スクロール (Intersection Observer)
   useEffect(() => {
@@ -274,24 +318,11 @@ export default function ChatApp() {
             if (data && data.length > 0) {
               const sorted = data.reverse();
               const formatted = sorted.map(m => formatMsg(m, myProfile));
-              
-              const replyIds = formatted.filter(m => m.reply_to).map(m => m.reply_to!);
-              if (replyIds.length > 0) {
-                const { data: replyMsgs } = await supabase.from('messages').select('id, text, user_id, is_deleted').in('id', replyIds);
-                if (replyMsgs) {
-                  const replyMap = new Map(replyMsgs.map(r => [r.id, r]));
-                  formatted.forEach(m => {
-                    if (m.reply_to && replyMap.has(m.reply_to)) {
-                      const r = replyMap.get(m.reply_to)!;
-                      m.reply_text = r.is_deleted ? 'メッセージの送信を取り消しました' : r.text;
-                      m.reply_user = SPEAKER(r.user_id);
-                    }
-                  });
-                }
-              }
+              await resolveReplies(formatted);
 
               const container = scrollContainerRef.current;
               const prevScrollHeight = container?.scrollHeight || 0;
+              const prevScrollTop = container?.scrollTop || 0;
 
               setMessages(prev => {
                 const prevIds = new Set(prev.map(p => p.id));
@@ -302,11 +333,12 @@ export default function ChatApp() {
               if (data.length < 50) setHasMore(false);
 
               // 過去ログ追加後のスクロール位置保持
+              // (ブラウザのスクロールアンカーが先に補正していても、 していなくても同じ値になる)
               if (container) {
                 requestAnimationFrame(() => {
                   requestAnimationFrame(() => {
                     const newScrollHeight = container.scrollHeight;
-                    container.scrollTop = newScrollHeight - prevScrollHeight;
+                    container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
                   });
                 });
               }
@@ -320,7 +352,7 @@ export default function ChatApp() {
     
     observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, messages, myProfile, formatMsg]);
+  }, [hasMore, isLoadingMore, messages, myProfile, formatMsg, resolveReplies]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) setPushStatus(Notification.permission);
@@ -333,7 +365,7 @@ export default function ChatApp() {
           const subscription = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string) });
           const subJSON = subscription.toJSON();
           if (subJSON.endpoint && subJSON.keys) {
-            await supabase.from('subscriptions').upsert({ endpoint: subJSON.endpoint, p256dh: subJSON.keys.p256dh, auth: subJSON.keys.auth, user_id: myProfile }, { onConflict: 'endpoint' });
+            await supabase.from('subscriptions').upsert({ endpoint: subJSON.endpoint, p256dh: subJSON.keys.p256dh, auth: subJSON.keys.auth, user_id: myProfile, last_seen_at: new Date().toISOString() }, { onConflict: 'endpoint' });
           }
         } catch (e) { console.warn('Push sub failed', e); }
       });
@@ -351,22 +383,7 @@ export default function ChatApp() {
           setIsDBReady(true);
           const sorted = data.reverse();
           const formatted = sorted.map(m => formatMsg(m, myProfile));
-
-          // リプライ先を解決
-          const replyIds = formatted.filter(m => m.reply_to).map(m => m.reply_to!);
-          if (replyIds.length > 0) {
-            const { data: replyMsgs } = await supabase.from('messages').select('id, text, user_id, is_deleted').in('id', replyIds);
-            if (replyMsgs) {
-              const replyMap = new Map(replyMsgs.map(r => [r.id, r]));
-              formatted.forEach(m => {
-                if (m.reply_to && replyMap.has(m.reply_to)) {
-                  const r = replyMap.get(m.reply_to)!;
-                  m.reply_text = r.is_deleted ? 'メッセージの送信を取り消しました' : r.text;
-                  m.reply_user = SPEAKER(r.user_id);
-                }
-              });
-            }
-          }
+          await resolveReplies(formatted);
           setMessages(formatted);
 
           // 既読処理（画面がアクティブな時のみ）
@@ -482,7 +499,7 @@ export default function ChatApp() {
         .subscribe();
       return () => { supabase.removeChannel(channel); };
     }
-  }, [myProfile, formatMsg]);
+  }, [myProfile, formatMsg, resolveReplies]);
 
   // 画面が見えるようになったら: 未読を既読にする + メッセージをリフレッシュ
   useEffect(() => {
@@ -576,6 +593,80 @@ export default function ChatApp() {
     }
   };
 
+  // ===== 検索 =====
+  const runSearch = async () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setIsSearching(true);
+    // LIKE の特殊文字 (\ % _) はエスケープして文字どおりに探す
+    const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+    const { data } = await supabase.from('messages')
+      .select('id, created_at')
+      .ilike('text', pattern)
+      .not('is_deleted', 'is', true)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    const results = (data || []).filter(r => !localDeleted.has(r.id));
+    setSearchResults(results);
+    setSearchedQuery(q);
+    setSearchIdx(0);
+    setIsSearching(false);
+    if (results.length > 0) goToSearchResult(results[0]);
+  };
+
+  // ヒットへ移動。 まだ読み込んでいない過去のメッセージなら、 その位置から
+  // 現在の最古までを読み込んで先頭に足してからジャンプする (タイムラインに穴を空けない)
+  const goToSearchResult = async (r: { id: number; created_at: string }) => {
+    if (messages.some(m => m.id === r.id)) { jumpToMessage(r.id); return; }
+    const oldest = messages.find(m => !m.id.toString().startsWith('temp_') && m.created_at_raw);
+    if (!oldest?.created_at_raw || !myProfile) return;
+
+    setIsSearching(true);
+    const rows: any[] = [];
+    let cursor = oldest.created_at_raw;
+    for (;;) {
+      const { data } = await supabase.from('messages').select('*')
+        .gte('created_at', r.created_at).lt('created_at', cursor)
+        .order('created_at', { ascending: false }).limit(500);
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (data.length < 500) break;
+      cursor = data[data.length - 1].created_at;
+    }
+    if (rows.length > 0) {
+      const formatted = rows.reverse().map(m => formatMsg(m, myProfile));
+      await resolveReplies(formatted);
+      pendingJumpId.current = r.id;
+      setMessages(prev => {
+        const prevIds = new Set(prev.map(p => p.id));
+        return [...formatted.filter(f => !prevIds.has(f.id)), ...prev];
+      });
+    }
+    setIsSearching(false);
+  };
+
+  const moveSearch = (nextIdx: number) => {
+    if (nextIdx < 0 || nextIdx >= searchResults.length) return;
+    setSearchIdx(nextIdx);
+    goToSearchResult(searchResults[nextIdx]);
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchedQuery('');
+    setSearchResults([]);
+    setSearchIdx(0);
+  };
+
+  // 過去ログを読み込んだ後、 描画されたらジャンプする
+  useEffect(() => {
+    const id = pendingJumpId.current;
+    if (id === null || !msgRefs.current.has(id)) return;
+    pendingJumpId.current = null;
+    requestAnimationFrame(() => jumpToMessage(id));
+  }, [messages]);
+
   // ===== Push =====
   const requestPushPermission = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) { alert("プッシュ通知に対応していません"); return; }
@@ -585,7 +676,7 @@ export default function ChatApp() {
         const reg = await navigator.serviceWorker.register('/sw.js');
         const subscription = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY as string) });
         const subJSON = subscription.toJSON();
-        if (subJSON.endpoint && subJSON.keys) await supabase.from('subscriptions').upsert({ endpoint: subJSON.endpoint, p256dh: subJSON.keys.p256dh, auth: subJSON.keys.auth, user_id: myProfile || 'unknown' }, { onConflict: 'endpoint' });
+        if (subJSON.endpoint && subJSON.keys) await supabase.from('subscriptions').upsert({ endpoint: subJSON.endpoint, p256dh: subJSON.keys.p256dh, auth: subJSON.keys.auth, user_id: myProfile || 'unknown', last_seen_at: new Date().toISOString() }, { onConflict: 'endpoint' });
         alert("通知の許可が完了しました！");
       } catch { alert("通知の設定中にエラーが発生しました。"); }
     }
@@ -744,6 +835,7 @@ export default function ChatApp() {
     setReplyTo(null);
 
     const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(7);
+    isNearBottom.current = true; // 自分の送信は過去を見ていても最新へ戻す (LINE と同じ)
     setMessages(prev => [...prev, {
       id: tempId, text: txt, isMine: true, status: 'sending', time: '送信中',
       timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }),
@@ -819,6 +911,7 @@ export default function ChatApp() {
       const tempUrl = URL.createObjectURL(file);
       return { tempId, tempUrl, file };
     });
+    isNearBottom.current = true;
     setMessages(prev => [
       ...prev,
       ...tempEntries.map(({ tempId, tempUrl }) => ({
@@ -855,6 +948,7 @@ export default function ChatApp() {
 
   const sendStamp = (filename: string) => {
     setShowStampPicker(false); const url = `/stamps/${filename}`; const tid = 'temp_' + Date.now();
+    isNearBottom.current = true;
     setMessages(prev => [...prev, { id: tid, text: '', isMine: true, status: 'sending', time: '送信中', timestamp: Date.now(), dateStr: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' }), imageUrl: url, user_id: myProfile || undefined }]);
     triggerPush("スタンプ！", url);
     if (isDBReady && myProfile) supabase.from('messages').insert([{ text: "", image_url: url, user_id: myProfile }]).then();
@@ -875,6 +969,35 @@ export default function ChatApp() {
   return (
     <>
       <div className="chat-area glass-panel" onClick={() => { setContextMenu(null); setShowAnnList(false); }}>
+        {/* 検索バー (LINE 風: ↑ で古いヒット、 ↓ で新しいヒットへ) */}
+        {searchOpen && (
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--glass-border)', background: 'var(--glass-bg)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.85)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '6px 10px' }}>
+              {isSearching ? <Loader2 size={15} className="animate-spin" color="#94a3b8" /> : <Search size={15} color="#94a3b8" />}
+              <input ref={searchInputRef} value={searchQuery} enterKeyHint="search" placeholder="トーク内を検索"
+                onChange={e => { setSearchQuery(e.target.value); setSearchedQuery(''); setSearchResults([]); setSearchIdx(0); }}
+                onKeyDown={e => {
+                  // IME 変換確定の Enter では検索しない
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); runSearch(); searchInputRef.current?.blur(); }
+                }}
+                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: '0.9rem', color: 'var(--text-main)' }} />
+              {searchQuery && (
+                <button aria-label="検索語を消す" onClick={() => { setSearchQuery(''); setSearchedQuery(''); setSearchResults([]); searchInputRef.current?.focus(); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, display: 'flex' }}><X size={15} /></button>
+              )}
+            </div>
+            {searchedQuery && (
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                {searchResults.length > 0 ? `${searchIdx + 1}/${searchResults.length}` : '0件'}
+              </span>
+            )}
+            <button aria-label="前 (古い) の結果" disabled={searchIdx >= searchResults.length - 1} onClick={() => moveSearch(searchIdx + 1)}
+              style={{ background: 'none', border: 'none', padding: '4px', display: 'flex', cursor: 'pointer', color: searchIdx >= searchResults.length - 1 ? '#cbd5e1' : '#475569' }}><ChevronUp size={20} /></button>
+            <button aria-label="次 (新しい) の結果" disabled={searchIdx <= 0} onClick={() => moveSearch(searchIdx - 1)}
+              style={{ background: 'none', border: 'none', padding: '4px', display: 'flex', cursor: 'pointer', color: searchIdx <= 0 ? '#cbd5e1' : '#475569' }}><ChevronDown size={20} /></button>
+            <button onClick={closeSearch} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.78rem', fontWeight: 600, padding: '4px 2px', whiteSpace: 'nowrap' }}>キャンセル</button>
+          </div>
+        )}
         {!isDBReady && <div style={{ padding: '8px 24px', background: 'rgba(244,63,94,0.1)', borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}><span style={{fontSize:'0.8rem', color:'#f43f5e', fontWeight:600}}>※DB未接続</span></div>}
 
         {pushStatus === 'denied' && <div style={{ padding: '8px 24px', background: 'rgba(244,63,94,0.1)', borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}><span style={{fontSize: '0.8rem', color:'#f43f5e', fontWeight: 600}}>通知がブロックされています</span></div>}
@@ -923,7 +1046,15 @@ export default function ChatApp() {
         )}
 
         {/* メッセージ一覧 */}
-        <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        {!searchOpen && (
+          <button aria-label="トーク内を検索"
+            onClick={e => { e.stopPropagation(); setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
+            style={{ position: 'absolute', top: '10px', right: '12px', zIndex: 20, width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.85)', border: '1px solid var(--glass-border)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', cursor: 'pointer' }}>
+            <Search size={17} />
+          </button>
+        )}
+        <div ref={scrollContainerRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
           {hasMore && window !== undefined && (
             <div ref={loaderRef} style={{ padding: '16px', display: 'flex', justifyContent: 'center' }}>
               {isLoadingMore ? <Loader2 size={24} className="animate-spin" color="#94a3b8" /> : null}
@@ -936,7 +1067,7 @@ export default function ChatApp() {
             // クラスタリング: 同じ人が連続 + 60秒以内 + 日付またぎなし + 間に別人なし
             const isGrouped = prevMsg && prevMsg.user_id === msg.user_id && ((msg.timestamp || 0) - (prevMsg.timestamp || 0) < 60000) && !showDate;
             const isNextGrouped = nextMsg && nextMsg.user_id === msg.user_id && ((nextMsg.timestamp || 0) - (msg.timestamp || 0) < 60000) && nextMsg.dateStr === msg.dateStr;
-            const isHighlighted = highlightId === msg.id;
+            const isHighlighted = highlightId === msg.id || (searchOpen && searchResults[searchIdx]?.id === msg.id);
             const isFirst = !isGrouped; // クラスタの先頭
             const avatarSrc = msg.user_id === 'user_a' ? '/stamps/stamp_custom_7.png' : msg.user_id === 'user_b' ? '/stamps/stamp_custom_8.png' : '/mochi.png';
             const bubbleBg = (msg.user_id === 'mochi' || msg.target_user === 'mochi') ? '#e2e8f0' : msg.isMine ? '#f0c8f7' : 'rgba(255,255,255,0.95)';
@@ -1025,7 +1156,7 @@ export default function ChatApp() {
                         color: 'var(--text-main)', boxShadow: '0 2px 8px rgba(100,116,166,0.06)', width: 'fit-content', maxWidth: '100%',
                         zIndex: 2, position: 'relative'
                       }}>
-                        {msg.text && renderTextWithLinks(msg.text)}
+                        {msg.text && renderTextWithLinks(msg.text, searchOpen ? searchedQuery : undefined)}
                         {msg.imageUrl && <img loading="lazy" src={msg.imageUrl} alt="" onClick={() => handleImageClickSafe(msg.id)} style={{ width:'200px', height:'200px', objectFit:'cover', marginTop: msg.text ? '8px' : '0', borderRadius:'12px', cursor:'pointer' }} />}
                         
                         {/* PCホバー時のリアクション追加ボタン */}
@@ -1101,6 +1232,7 @@ export default function ChatApp() {
             </div>
           )}
           <div ref={messagesEndRef} />
+        </div>
         </div>
 
         {/* 入力エリア */}

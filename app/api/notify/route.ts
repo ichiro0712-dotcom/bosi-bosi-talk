@@ -48,23 +48,30 @@ export async function POST(req: Request) {
         }
       };
       
+      // 送信結果を subscriptions に残す (端末側の受信 = last_received_at と突き合わせて診断する)
+      const recordSend = (status: string) =>
+        supabase.from('subscriptions').update({ last_sent_at: new Date().toISOString(), last_send_status: status }).eq('id', sub.id).then();
+
       try {
-        await webPush.sendNotification(pushSubscription, payload, {
+        const res = await webPush.sendNotification(pushSubscription, payload, {
           urgency: 'high',
           TTL: 60 * 60,
         });
-        return { success: true, endpoint: sub.endpoint };
+        await recordSend(String(res.statusCode));
+        return { success: true, user_id: sub.user_id, statusCode: res.statusCode, endpoint: sub.endpoint };
       } catch (err: any) {
         if (err.statusCode === 410 || err.statusCode === 404) {
           await supabase.from('subscriptions').delete().eq('id', sub.id);
-          return { success: false, reason: 'unsubscribed', endpoint: sub.endpoint };
+          return { success: false, user_id: sub.user_id, reason: 'unsubscribed', endpoint: sub.endpoint };
         } else {
           console.error("Push Error on endpoint:", sub.endpoint, err);
-          return { success: false, reason: err.message, body: err.body, endpoint: sub.endpoint };
+          await recordSend(`error ${err.statusCode ?? ''} ${err.message ?? ''}`.trim());
+          return { success: false, user_id: sub.user_id, reason: err.message, body: err.body, endpoint: sub.endpoint };
         }
       }
     }));
 
+    console.log('[notify]', JSON.stringify(sendResults.map(r => ({ user: r.user_id, ok: r.success, status: (r as any).statusCode ?? (r as any).reason }))));
     const errors = sendResults.filter(r => !r.success);
     return NextResponse.json({ success: true, sentCount: subs.length, results: sendResults, errors });
 

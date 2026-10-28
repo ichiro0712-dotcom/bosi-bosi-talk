@@ -32,7 +32,8 @@ export default function PushSubscriber() {
             endpoint: subJSON.endpoint,
             p256dh: subJSON.keys.p256dh,
             auth: subJSON.keys.auth,
-            user_id: profile
+            user_id: profile,
+            last_seen_at: new Date().toISOString(),
           }, { onConflict: 'endpoint' });
         }
       } catch (e) {

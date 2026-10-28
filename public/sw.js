@@ -19,9 +19,11 @@ self.addEventListener('push', function(event) {
       payload.body = event.data.text() || payload.body;
     }
 
-    // 既存の通知を数えて「○件の新着メッセージ」にまとめる
+    // 既存の通知の件数を引き継いで「○件の新着メッセージ」にまとめる
+    // (同じ tag の通知は常に1つに置き換わるので、 length ではなく data.count を足していく)
     const currentNotifications = await self.registration.getNotifications({ tag: 'chat-message' });
-    const count = currentNotifications.length + 1;
+    const prevCount = currentNotifications.reduce(function(n, x) { return Math.max(n, (x.data && x.data.count) || 1); }, 0);
+    const count = prevCount + 1;
 
     const options = {
       body: count > 1
@@ -45,6 +47,14 @@ self.addEventListener('push', function(event) {
     currentNotifications.forEach(function(n) { n.close(); });
 
     await self.registration.showNotification(payload.title, options);
+
+    // 受信記録 (届いていない原因の切り分け用)。 失敗しても通知には影響させない
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub) {
+        await fetch('/api/push-ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+      }
+    } catch (e) {}
   })());
 });
 
